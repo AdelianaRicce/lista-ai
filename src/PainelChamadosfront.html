@@ -1,0 +1,1397 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <!-- Lista Ai — Painel CHAMADOS DO SUPORTE 1.4 (Lista Ai 1.4.22): aba E-mails (assumidos, recebidos, concluídos,
+       SLA dos abertos, por analista/cliente/categoria, tabela e CSV) e Visão geral com o cartão E-mail e o e-mail
+       somado aos indicadores (categoria Suporte, pela data em que foi assumido). Requer PainelChamados.gs com
+       webObterEmailsPainelChamados.
+       Painel 1.1: Visão geral por fonte (Atendimentos Jivo + Chamados Trello),
+       aba Atendimentos Jivo, período único no topo, tema do Widget. Requer PainelChamados.gs com webObterAtendimentosJivo. -->
+  <meta charset="utf-8">
+  <script>
+    // Tema antes de desenhar (evita piscar): 1) salvo pelo Widget neste navegador; 2) tema do computador.
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('lista_ai_tema'); } catch (e) {}
+      if (!t) t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'escuro' : 'claro';
+      document.documentElement.setAttribute('data-tema', t);
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <style>
+    :root {
+      --azul: #1a73e8; --azul-claro: #e8f0fe; --btn-txt: #fff; --cinza: #5f6368; --borda: #dadce0; --fundo: #f8f9fa;
+      --card: #fff; --suave: #f1f3f4; --linha: #eee; --texto: #202124; --verde: #188038; --verde-bg: #e6f4ea;
+      --vermelho: #d93025; --laranja: #e37400;
+      --alerta-bg: #fef7e0; --alerta-borda: #f9e1a0; --alerta-txt: #7a5b00;
+      --erro-bg: #fce8e6; --erro-borda: #f6c7c3; --erro-txt: #a50e0e;
+    }
+    html[data-tema="escuro"] {
+      color-scheme: dark;
+      --azul: #8ab4f8; --azul-claro: #1f3150; --btn-txt: #202124; --cinza: #a8abb0; --borda: #44474e; --fundo: #1e1f22;
+      --card: #2b2d31; --suave: #3a3c42; --linha: #3a3c42; --texto: #e3e3e3; --verde: #81c995; --verde-bg: #1e3a28;
+      --vermelho: #f28b82; --laranja: #fbbc04;
+      --alerta-bg: #3a3520; --alerta-borda: #5c5230; --alerta-txt: #fdd663;
+      --erro-bg: #3d2321; --erro-borda: #6b3a36; --erro-txt: #f28b82;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Google Sans', Roboto, Arial, sans-serif; color: var(--texto); background: var(--fundo); font-size: 13px; }
+    header { background: var(--card); border-bottom: 1px solid var(--borda); padding: 12px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 20; }
+    header h1 { font-size: 18px; margin: 0; letter-spacing: .5px; }
+    .meta { color: var(--cinza); font-size: 12px; }
+    .espaco { flex: 1; }
+    button { font-family: inherit; }
+    .btn { padding: 7px 14px; border-radius: 6px; border: 1px solid var(--borda); background: var(--card); color: var(--texto); cursor: pointer; font-size: 12px; }
+    .btn-primario { background: var(--azul); color: var(--btn-txt); border-color: var(--azul); font-weight: 600; }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    #statusAtualizacao { font-size: 12px; color: var(--cinza); }
+    .barra-periodo { background: var(--card); border-bottom: 1px solid var(--borda); padding: 10px 20px; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+    .filtros-bloco { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 12px; padding: 10px 12px; background: var(--card); border: 1px solid var(--borda); border-radius: 10px; }
+    .campo { display: flex; flex-direction: column; gap: 3px; }
+    .campo label { font-size: 11px; color: var(--cinza); }
+    select, input[type=date], input[type=search] { padding: 6px 8px; border: 1px solid var(--borda); border-radius: 6px; font-size: 12px; background: var(--card); color: var(--texto); font-family: inherit; }
+    .multi { position: relative; }
+    .multi > button { min-width: 140px; text-align: left; padding: 6px 8px; border: 1px solid var(--borda); border-radius: 6px; background: var(--card); color: var(--texto); cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+    .multi > button.ativo { border-color: var(--azul); background: var(--azul-claro); color: var(--azul); }
+    .multi .pop { display: none; position: absolute; top: 100%; left: 0; margin-top: 4px; background: var(--card); border: 1px solid var(--borda); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.25); z-index: 30; width: 260px; padding: 8px; }
+    .multi.aberto .pop { display: block; }
+    .multi .pop input[type=search] { width: 100%; margin-bottom: 6px; }
+    .multi .opcoes { max-height: 260px; overflow-y: auto; }
+    .multi .opcoes label { display: flex; gap: 6px; align-items: center; padding: 3px 2px; font-size: 12px; cursor: pointer; }
+    .multi .opcoes input[type=checkbox] { width: auto; margin: 0; flex: 0 0 auto; }
+    .multi .acoes { display: flex; justify-content: space-between; margin-top: 6px; }
+    .multi .acoes a { font-size: 11px; color: var(--azul); cursor: pointer; }
+    nav.abas { display: flex; align-items: center; gap: 4px; padding: 0 20px; background: var(--card); border-bottom: 1px solid var(--borda); overflow-x: auto; }
+    nav.abas button { border: none; background: none; padding: 12px 14px; cursor: pointer; font-size: 13px; color: var(--cinza); border-bottom: 3px solid transparent; white-space: nowrap; }
+    nav.abas button.atual { color: var(--azul); border-bottom-color: var(--azul); font-weight: 600; }
+    nav.abas .grupo { font-size: 11px; color: var(--cinza); padding: 0 4px 0 14px; white-space: nowrap; border-left: 1px solid var(--borda); }
+    main { padding: 16px 20px 40px; }
+    .aba { display: none; }
+    .aba.atual { display: block; }
+    .bloco { margin-bottom: 24px; }
+    .bloco > h2 { font-size: 15px; margin: 0 0 10px; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .kpi { background: var(--card); border: 1px solid var(--borda); border-radius: 10px; padding: 12px 14px; cursor: pointer; }
+    .kpi:hover { border-color: var(--azul); }
+    .kpi .rotulo { font-size: 11px; color: var(--cinza); }
+    .kpi .valor { font-size: 24px; font-weight: 700; margin-top: 4px; }
+    .kpi .sub { font-size: 11px; color: var(--cinza); margin-top: 2px; }
+    .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; }
+    .grade3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+    .cartao { background: var(--card); border: 1px solid var(--borda); border-radius: 10px; padding: 12px 14px; }
+    .cartao h3 { font-size: 13px; margin: 0 0 8px; }
+    .cartao .dica { font-size: 11px; color: var(--cinza); margin: -4px 0 8px; }
+    .grafico { position: relative; height: 280px; }
+    .resumo { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .resumo span { background: var(--suave); border-radius: 12px; padding: 2px 8px; font-size: 11px; cursor: pointer; }
+    .resumo span b { margin-left: 4px; }
+    .vazio { color: var(--cinza); font-size: 12px; padding: 30px 0; text-align: center; }
+    .alerta { background: var(--alerta-bg); border: 1px solid var(--alerta-borda); color: var(--alerta-txt); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; width: 100%; }
+    .erro { background: var(--erro-bg); border-color: var(--erro-borda); color: var(--erro-txt); }
+    .subfiltros { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; background: var(--card); }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--linha); vertical-align: top; }
+    th { background: var(--suave); font-weight: 600; position: sticky; top: 0; white-space: nowrap; }
+    td a { color: var(--azul); text-decoration: none; }
+    td a:hover { text-decoration: underline; }
+    .tabela-wrap { max-height: 520px; overflow: auto; border: 1px solid var(--borda); border-radius: 8px; }
+    .num { text-align: right; }
+    .selo { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 11px; background: var(--suave); }
+    .selo.vermelho { background: var(--erro-bg); color: var(--vermelho); }
+    .selo.verde { background: var(--verde-bg); color: var(--verde); }
+    .selo.amarelo { background: var(--alerta-bg); color: var(--alerta-txt); }
+    .selo.azul { background: var(--azul-claro); color: var(--azul); }
+    #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 50; align-items: center; justify-content: center; }
+    #modal .caixa { background: var(--card); border-radius: 10px; width: 95%; max-width: 980px; max-height: 85vh; display: flex; flex-direction: column; }
+    #modal .topo { padding: 12px 16px; border-bottom: 1px solid var(--borda); display: flex; align-items: center; gap: 10px; }
+    #modal .topo h3 { margin: 0; font-size: 14px; flex: 1; }
+    #modal .corpo { padding: 0 16px 16px; overflow: auto; }
+    #carregando { position: fixed; inset: 0; background: var(--fundo); opacity: .92; display: flex; align-items: center; justify-content: center; z-index: 60; font-size: 14px; color: var(--cinza); }
+    #guardaFiltros { display: none; }
+        /* NOVO (painel 1.2): faixa de fontes da Visão geral */
+    .fontes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .fonte { background: var(--card); border: 1px solid var(--borda); border-radius: 10px; padding: 14px 16px; cursor: pointer; }
+    .fonte:hover { border-color: var(--azul); }
+    .fonte.embreve { cursor: default; border-style: dashed; }
+    .fonte.embreve:hover { border-color: var(--borda); }
+    .fonte .topo { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--cinza); }
+    .fonte .valor { font-size: 28px; font-weight: 700; margin-top: 6px; }
+    .fonte .sub { font-size: 12px; color: var(--cinza); margin-top: 2px; }
+    .fonte .comparativo { font-size: 12px; margin-top: 6px; }
+    .selo-breve { background: var(--alerta-bg); color: var(--alerta-txt); border-radius: 10px; padding: 1px 8px; font-size: 11px; }
+    .kpi.embreve { cursor: default; border-style: dashed; }
+    .kpi.embreve:hover { border-color: var(--borda); }
+  </style>
+</head>
+<body>
+  <div id="carregando">Carregando chamados…</div>
+
+  <header>
+    <h1>📊 CHAMADOS DO SUPORTE</h1>
+    <span class="meta" id="infoAtualizacao">—</span>
+    <span class="espaco"></span>
+    <span id="statusAtualizacao"></span>
+    <button class="btn" id="btnTema" onclick="alternarTema()" title="Alternar tema claro/escuro">🌙</button>
+    <button class="btn btn-primario" id="btnAtualizar" onclick="solicitarAtualizacao()">🔄 Atualizar agora</button>
+  </header>
+
+  <!-- Período: vale para todas as fontes -->
+  <section class="barra-periodo">
+    <div class="campo">
+      <label>Período</label>
+      <select id="fPeriodo" onchange="mudouPeriodo()">
+        <optgroup label="Calendário">
+          <option value="mes" selected>Mês atual</option>
+          <option value="mesAnt">Mês anterior</option>
+          <option value="tri">Trimestre atual</option>
+          <option value="triAnt">Trimestre anterior</option>
+          <option value="sem">Semestre atual</option>
+          <option value="semAnt">Semestre anterior</option>
+          <option value="ano">Ano atual</option>
+          <option value="anoAnt">Ano anterior</option>
+        </optgroup>
+        <optgroup label="Corridos">
+          <option value="30">Últimos 30 dias</option>
+          <option value="90">Últimos 90 dias</option>
+          <option value="180">Últimos 180 dias</option>
+          <option value="365">Últimos 12 meses</option>
+        </optgroup>
+        <option value="tudo">Todo o histórico</option>
+        <option value="custom">Personalizado…</option>
+      </select>
+    </div>
+    <div class="campo" id="campoDatas" style="display:none; flex-direction:row; gap:6px;">
+      <div class="campo"><label>De</label><input type="date" id="fDe" onchange="renderizar()"></div>
+      <div class="campo"><label>Até</label><input type="date" id="fAte" onchange="renderizar()"></div>
+    </div>
+    <span class="meta" id="infoPeriodo"></span>
+  </section>
+
+  <nav class="abas" id="abas">
+    <button data-aba="geral" class="atual">Visão geral</button>
+    <button data-aba="atend">Atendimentos Jivo</button>
+    <!-- NOVO (painel 1.4) -->
+    <button data-aba="email">E-mails</button>
+    <span class="grupo">Chamados (Trello):</span>
+    <button data-aba="resumoT">Resumo</button>
+    <button data-aba="dev">Devoluções</button>
+    <button data-aba="sla">SLA</button>
+    <button data-aba="clientes">Clientes e Tipo xml</button>
+    <button data-aba="cards">Cards</button>
+  </nav>
+
+  <!-- Filtros de cada fonte: movidos para o bloco/aba aberto (posicionarFiltros). -->
+  <div id="guardaFiltros">
+    <div class="filtros-bloco" id="filtrosAtend">
+      <div class="campo"><label>Analista</label><div class="multi" id="mAtAnalista"></div></div>
+      <div class="campo"><label>Cliente</label><div class="multi" id="mAtCliente"></div></div>
+      <button class="btn" onclick="limparFiltrosAtend()">Limpar filtros</button>
+      <span class="meta" id="infoAtend"></span>
+    </div>
+    <!-- NOVO (painel 1.4): filtros da aba E-mails -->
+    <div class="filtros-bloco" id="filtrosEmail">
+      <div class="campo"><label>Analista (responsável)</label><div class="multi" id="mEmAnalista"></div></div>
+      <div class="campo"><label>Cliente</label><div class="multi" id="mEmCliente"></div></div>
+      <div class="campo"><label>Categoria</label><div class="multi" id="mEmCategoria"></div></div>
+      <button class="btn" onclick="limparFiltrosEmail()">Limpar filtros</button>
+      <span class="meta" id="infoEmail"></span>
+    </div>
+    <div class="filtros-bloco" id="filtrosTrello">
+      <div id="avisoErroCarga" class="alerta erro" style="display:none;"></div>
+      <div class="campo">
+        <label>Data de referência</label>
+        <select id="fBase" onchange="renderizar()">
+          <option value="cr">Criação do card</option>
+          <option value="co">Conclusão do card</option>
+        </select>
+      </div>
+      <div class="campo"><label>Cliente</label><div class="multi" id="mCliente"></div></div>
+      <div class="campo"><label>Tipo xml</label><div class="multi" id="mXml"></div></div>
+      <div class="campo"><label>Lista atual</label><div class="multi" id="mLista"></div></div>
+      <div class="campo"><label>Status</label><div class="multi" id="mStatus"></div></div>
+      <div class="campo"><label>Analista (membro)</label><div class="multi" id="mMembro"></div></div>
+      <button class="btn" onclick="limparFiltrosTrello()">Limpar filtros</button>
+    </div>
+  </div>
+
+  <main>
+
+    <!-- VISÃO GERAL (painel 1.2): faixa de fontes + indicadores somados. Só o período do topo vale aqui. -->
+    <section class="aba atual" id="aba-geral">
+      <div class="fontes" id="faixaFontes"></div>
+      <div class="bloco">
+        <h2>Indicadores somados</h2>
+        <!-- ALTERADO (painel 1.4) -->
+        <p class="meta" style="margin:-6px 0 10px;">Somam Jivo e E-mail. O e-mail conta pela data em que foi assumido e só na categoria Suporte (Coordenação e Desenvolvimento/Comercial ficam na aba E-mails).</p>
+        <div class="kpis" id="kpisTotal"></div>
+        <div class="grade">
+          <div class="cartao"><h3>Atendimentos por cliente</h3><p class="dica">Top 15, por canal e se virou chamado.</p><div class="grafico"><canvas id="gTotCliente"></canvas></div></div>
+          <div class="cartao"><h3>Volume por semana, por canal</h3><p class="dica">Jivo: atendimentos encerrados · E-mail: assumidos. A semana começa na segunda.</p><div class="grafico"><canvas id="gTotSemana"></canvas></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ATENDIMENTOS JIVO -->
+    <section class="aba" id="aba-atend">
+      <div id="slotAtendAba"></div>
+      <div class="kpis" id="kpisAtend"></div>
+      <div class="grade">
+        <div class="cartao"><h3>Atendimentos por analista</h3><p class="dica">Quem encerrou o chat (até 01/10: último analista que escreveu).</p><div class="grafico"><canvas id="gAtAnalista"></canvas></div><div class="resumo" id="rAtAnalista"></div></div>
+        <div class="cartao"><h3>Atendimentos por cliente</h3><p class="dica">Pelo canal do chat (aba CANAIS).</p><div class="grafico"><canvas id="gAtCliente"></canvas></div><div class="resumo" id="rAtCliente"></div></div>
+        <div class="cartao"><h3>Retornos por analista</h3><div class="grafico"><canvas id="gAtRet"></canvas></div><div class="resumo" id="rAtRet"></div></div>
+        <div class="cartao"><h3>Atendimentos por dia</h3><p class="dica">Atendimentos × retornos encerrados por dia.</p><div class="grafico"><canvas id="gAtDia"></canvas></div></div>
+                <div class="cartao"><h3>Atendimentos por tipo</h3><p class="dica">Pelas mensagens do cliente. Disponível só no histórico (chats até 01/10/2026).</p><div class="grafico"><canvas id="gAtTipo"></canvas></div><div class="resumo" id="rAtTipo"></div></div>
+        <div class="cartao"><h3>Duração por analista (mediana)</h3><p class="dica">Atendimentos e retornos. Histórico: abertura → última mensagem; Lista Ai: aceite → encerramento.</p><div class="grafico"><canvas id="gAtDuracao"></canvas></div></div>
+      </div>
+      <div class="cartao" style="margin-top:12px;">
+        <div class="subfiltros" style="margin-bottom:8px;">
+          <h3 style="margin:0; align-self:center;">Protocolos</h3>
+          <input type="search" id="fBuscaAt" placeholder="Protocolo, analista, cliente, tipo…" oninput="renderizarTabelaAtend()" style="width:240px;">
+          <label style="display:flex; gap:6px; align-items:center; font-size:12px;"><input type="checkbox" id="fSoCard" onchange="renderizarTabelaAtend()"> Só os que viraram chamado</label>
+          <span class="meta" id="contAt"></span>
+          <button class="btn" onclick="baixarCsvAtend()">⬇️ Baixar CSV</button>
+        </div>
+        <div class="tabela-wrap" id="tabAtend"></div>
+      </div>
+    </section>
+
+    <!-- NOVO (painel 1.4): E-MAILS -->
+    <section class="aba" id="aba-email">
+      <div id="slotEmailAba"></div>
+      <p class="meta" style="margin:-4px 0 10px;">Assumidos, recebidos e concluídos seguem o período do topo. Os números "agora" (em aberto, fora do prazo, reabertos) mostram a situação atual. Descartados não entram.</p>
+      <div class="kpis" id="kpisEmail"></div>
+      <div class="grade">
+        <div class="cartao"><h3>E-mails por analista</h3><p class="dica">Assumidos no período. E-mail com mais de um responsável conta para cada um.</p><div class="grafico"><canvas id="gEmAnalista"></canvas></div><div class="resumo" id="rEmAnalista"></div></div>
+        <div class="cartao"><h3>E-mails por cliente</h3><p class="dica">Assumidos no período.</p><div class="grafico"><canvas id="gEmCliente"></canvas></div><div class="resumo" id="rEmCliente"></div></div>
+        <div class="cartao"><h3>E-mails por categoria</h3><p class="dica">Assumidos no período, por categoria › subcategoria.</p><div class="grafico"><canvas id="gEmCategoria"></canvas></div><div class="resumo" id="rEmCategoria"></div></div>
+        <div class="cartao"><h3>Por semana</h3><p class="dica">Assumidos × concluídos. A semana começa na segunda.</p><div class="grafico"><canvas id="gEmSemana"></canvas></div></div>
+        <div class="cartao"><h3>SLA dos abertos (agora)</h3><p class="dica">Dias úteis desde que foi assumido: Semana 1 (dias 1–5), Semana 2 (6–10), depois Fora do prazo.</p><div class="grafico"><canvas id="gEmSla"></canvas></div></div>
+      </div>
+      <div class="cartao" style="margin-top:12px;">
+        <div class="subfiltros" style="margin-bottom:8px;">
+          <h3 style="margin:0; align-self:center;">E-mails</h3>
+          <input type="search" id="fBuscaEm" placeholder="Protocolo, assunto, cliente, responsável…" oninput="renderizarTabelaEmail()" style="width:260px;">
+          <label style="display:flex; gap:6px; align-items:center; font-size:12px;"><input type="checkbox" id="fEmAbertos" onchange="renderizarTabelaEmail()"> Só os em aberto</label>
+          <span class="meta" id="contEm"></span>
+          <button class="btn" onclick="baixarCsvEmail()">⬇️ Baixar CSV</button>
+        </div>
+        <div class="tabela-wrap" id="tabEmail"></div>
+      </div>
+    </section>
+
+    <!-- Filtros do Trello nas abas Devoluções / SLA / Clientes / Cards -->
+    <div id="slotTrelloAbas"></div>
+    <!-- RESUMO DA PASSAGEM (painel 1.2) — era o bloco "Chamados (Trello)" da Visão geral -->
+    <section class="aba" id="aba-resumoT">
+      <div class="kpis" id="kpisGeral"></div>
+      <div class="grade">
+        <div class="cartao"><h3>Cards por mês</h3><p class="dica">Criados × concluídos, entre os cards do filtro.</p><div class="grafico"><canvas id="gMes"></canvas></div></div>
+        <div class="cartao"><h3>Em andamento por lista (agora)</h3><p class="dica">Situação atual, entre os cards do filtro.</p><div class="grafico"><canvas id="gAndamento"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- DEVOLUÇÕES -->
+    <section class="aba" id="aba-dev">
+      <div class="subfiltros">
+        <div class="campo"><label>Nível que devolveu</label><div class="multi" id="mNivel"></div></div>
+        <div class="campo"><label>Tipo de devolução</label><div class="multi" id="mTipoDev"></div></div>
+        <div class="campo"><label>Motivo</label><div class="multi" id="mMotivo"></div></div>
+      </div>
+      <div class="kpis" id="kpisDev"></div>
+      <div class="grade">
+        <div class="cartao"><h3>Devoluções por nível</h3><div class="grafico"><canvas id="gDevNivel"></canvas></div></div>
+        <div class="cartao"><h3>Devoluções por mês</h3><p class="dica">Pela data da devolução.</p><div class="grafico"><canvas id="gDevMes"></canvas></div></div>
+        <div class="cartao"><h3>Por tipo</h3><div class="grafico"><canvas id="gDevTipo"></canvas></div></div>
+        <div class="cartao"><h3>Por motivo (top 15)</h3><div class="grafico"><canvas id="gDevMotivo"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- SLA -->
+    <section class="aba" id="aba-sla">
+      <div class="alerta">⚠️ O índice de estourados está alto (~48% no histórico): a regra não tem tolerância e há pendências registradas sem a etiqueta da categoria <b>Pendencia</b> (que pausa o relógio). Use estes números com cautela até revisar o uso dessa categoria.</div>
+      <div class="subfiltros">
+        <div class="campo"><label>Lista da passagem</label><div class="multi" id="mListaPerm"></div></div>
+        <div class="campo"><label>Situação SLA</label><div class="multi" id="mSitSla"></div></div>
+      </div>
+      <div class="kpis" id="kpisSla"></div>
+      <div class="grade">
+        <div class="cartao"><h3>Situação do SLA por lista</h3><p class="dica">Cada passagem de um card por uma lista com SLA.</p><div class="grafico"><canvas id="gSlaLista"></canvas></div></div>
+        <div class="cartao"><h3>% estourado por mês</h3><p class="dica">Passagens encerradas, pelo mês em que o card entrou na lista.</p><div class="grafico"><canvas id="gSlaMes"></canvas></div></div>
+      </div>
+      <div class="cartao" style="margin-top:12px;">
+        <h3>Estourados em aberto (agora)</h3>
+        <div class="tabela-wrap" id="tabEstAberto"></div>
+      </div>
+    </section>
+
+    <!-- CLIENTES E TIPO XML -->
+    <section class="aba" id="aba-clientes">
+      <div class="grade">
+        <div class="cartao"><h3>Casos por cliente</h3><div class="grafico"><canvas id="gCliente"></canvas></div></div>
+        <div class="cartao"><h3>Casos por tipo xml</h3><div class="grafico"><canvas id="gXml"></canvas></div></div>
+        <div class="cartao"><h3>Devoluções por cliente</h3><div class="grafico"><canvas id="gDevCliente"></canvas></div></div>
+        <div class="cartao"><h3>Devoluções por tipo xml</h3><div class="grafico"><canvas id="gDevXml"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- CARDS -->
+    <section class="aba" id="aba-cards">
+      <div class="subfiltros">
+        <div class="campo"><label>Buscar</label><input type="search" id="fBusca" placeholder="Título, cliente, membro…" oninput="renderizarCards()" style="width:260px;"></div>
+        <label style="display:flex; gap:6px; align-items:center; font-size:12px;"><input type="checkbox" id="fReinc" onchange="renderizarCards()"> Só reincidentes (2+ devoluções)</label>
+        <span class="meta" id="contCards"></span>
+      </div>
+      <div class="tabela-wrap" id="tabCards" style="max-height:640px;"></div>
+    </section>
+  </main>
+
+  <div id="modal" onclick="if (event.target.id === 'modal') fecharModal()">
+    <div class="caixa">
+      <div class="topo"><h3 id="modalTitulo"></h3><button class="btn" onclick="fecharModal()">Fechar</button></div>
+      <div class="corpo" id="modalCorpo"></div>
+    </div>
+  </div>
+
+<script>
+/* ======================= estado ======================= */
+let DADOS = null;          // Trello: { controle, cards, devolucoes, permanencias }
+let ATEND = null;          // Jivo:   { eventos: [{ d, p, ca, cli, a, k }], cards: { protocolo: link } }
+let EMAILS = null;         // NOVO (painel 1.4) E-mail: { emails: [{ id, p, a, cli, resp, cat, sub, sit, k, et, ch, as, ce, pz, cd, su, rb, o, cl }] }
+let CARD = {};             // id do card -> card
+let CARD_POR_PROT = {};    // protocolo -> link do card (CARDS_TRELLO + títulos "Jivo NNNN")
+const GRAFICOS = {};
+const MULTI = {};
+let ABA_ATUAL = 'geral';
+let TIMER_STATUS = null;
+let KPI_ITENS = [];
+const SEM_CLIENTE = '(sem cliente)';
+const SEM_RESP = '(sem responsável)';
+const CORES = ['#1a73e8', '#e37400', '#188038', '#d93025', '#9334e6', '#12b5cb', '#f9ab00', '#e52592',
+  '#5f6368', '#7cb342', '#3949ab', '#00897b', '#8d6e63', '#c0ca33', '#ff7043'];
+const COR_SIT = { 'Dentro': '#188038', 'Estourado': '#d93025', 'Em aberto': '#1a73e8', 'Estourado (em aberto)': '#e37400' };
+// NOVO (painel 1.4): etapas do e-mail aberto (k) -> rótulo e cor
+const ETAPAS_EMAIL = [
+  { k: 'aguard', nome: 'Aguardando assumir', cor: '#1a73e8', selo: 'azul' },
+  { k: 's1', nome: 'Semana 1', cor: '#188038', selo: 'verde' },
+  { k: 's2', nome: 'Semana 2', cor: '#f9ab00', selo: 'amarelo' },
+  { k: 'fora', nome: 'Fora do prazo', cor: '#d93025', selo: 'vermelho' },
+  { k: 'semsla', nome: 'Sem SLA', cor: '#9334e6', selo: '' }
+];
+const DIA = 86400000;
+const ABAS_TRELLO = ['dev', 'sla', 'clientes', 'cards'];
+
+/* ======================= tema ======================= */
+function temaAtual() { return document.documentElement.getAttribute('data-tema') === 'escuro' ? 'escuro' : 'claro'; }
+function aplicarCoresGraficos() {
+  const css = getComputedStyle(document.documentElement);
+  Chart.defaults.color = css.getPropertyValue('--cinza').trim() || '#5f6368';
+  Chart.defaults.borderColor = css.getPropertyValue('--linha').trim() || '#eee';
+}
+
+function atualizarBotaoTema() {
+  const b = document.getElementById('btnTema');
+  if (!b) return;
+  b.textContent = temaAtual() === 'escuro' ? '☀️' : '🌙';
+  b.title = temaAtual() === 'escuro' ? 'Mudar para o tema claro' : 'Mudar para o tema escuro';
+}
+function alternarTema() {
+  const novo = temaAtual() === 'escuro' ? 'claro' : 'escuro';
+  document.documentElement.setAttribute('data-tema', novo);
+  try { localStorage.setItem('lista_ai_tema', novo); } catch (e) {}
+  aplicarCoresGraficos();
+  atualizarBotaoTema();
+  renderizar(); // redesenha os gráficos com as cores do tema
+}
+
+// O link aberto pelo Widget traz "&tema=": ele manda sobre o salvo no navegador.
+function lerTemaDoLink() {
+  try {
+    google.script.url.getLocation(loc => {
+      const t = loc && loc.parameter ? loc.parameter.tema : '';
+      if ((t === 'escuro' || t === 'claro') && t !== temaAtual()) {
+        document.documentElement.setAttribute('data-tema', t);
+        aplicarCoresGraficos();
+        atualizarBotaoTema();
+        renderizar();
+      }
+    });
+  } catch (e) {}
+}
+
+/* ======================= utilidades ======================= */
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function dois(n) { return String(n).padStart(2, '0'); }
+function fmtData(ms) { if (!ms) return ''; const d = new Date(ms); return dois(d.getDate()) + '/' + dois(d.getMonth() + 1) + '/' + d.getFullYear(); }
+function fmtDataHora(ms) { if (!ms) return ''; const d = new Date(ms); return fmtData(ms) + ' ' + dois(d.getHours()) + ':' + dois(d.getMinutes()); }
+function fmtHora(ms) { const d = new Date(ms); return dois(d.getHours()) + ':' + dois(d.getMinutes()); }
+function chaveMes(ms) { const d = new Date(ms); return d.getFullYear() + '-' + dois(d.getMonth() + 1); }
+function chaveDia(ms) { const d = new Date(ms); return d.getFullYear() + '-' + dois(d.getMonth() + 1) + '-' + dois(d.getDate()); }
+function rotuloMes(k) { const p = k.split('-'); return p[1] + '/' + p[0]; }
+function rotuloDia(k) { const p = k.split('-'); return p[2] + '/' + p[1]; }
+function pct(a, b) { return b ? Math.round(a * 1000 / b) / 10 : 0; }
+function unicos(arr) { return Array.from(new Set(arr)); }
+function fmtHoras(h) {
+  if (h === null || h === undefined || h === '' || isNaN(h)) return '';
+  const min = Math.round(Number(h) * 60);
+  return Math.floor(min / 60) + ':' + dois(min % 60);
+}
+
+/* NOVO (painel 1.3): mediana (em minutos) e texto de duração. */
+function mediana(nums) {
+  const a = nums.filter(n => n != null && !isNaN(n)).sort((x, y) => x - y);
+  if (!a.length) return null;
+  const m = Math.floor(a.length / 2);
+  return Math.round((a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2) * 10) / 10;
+}
+function fmtMin(m) {
+  if (m == null || isNaN(m)) return '—';
+  const t = Math.round(m);
+  return t < 60 ? t + ' min' : Math.floor(t / 60) + 'h' + dois(t % 60);
+}
+
+function agrupar(itens, chaveFn) {
+  const m = new Map();
+  itens.forEach(it => {
+    let ks = chaveFn(it);
+    if (!Array.isArray(ks)) ks = [ks];
+    if (!ks.length) ks = ['(sem informação)'];
+    ks.forEach(k => {
+      k = (k === '' || k == null) ? '(sem informação)' : k;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(it);
+    });
+  });
+  return m;
+}
+function ordenarPorTamanho(m, limite) {
+  const arr = Array.from(m.entries()).sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0]), 'pt-BR'));
+  return limite ? arr.slice(0, limite) : arr;
+}
+
+/* ======================= filtro múltiplo ======================= */
+function criarMulti(id, aoMudar) {
+  const raiz = document.getElementById(id);
+  raiz.innerHTML = '<button type="button"></button><div class="pop"><input type="search" placeholder="Buscar…">' +
+    '<div class="opcoes"></div><div class="acoes"><a data-a="todos">Marcar todos</a><a data-a="limpar">Limpar</a></div></div>';
+  const comp = { opcoes: [], sel: new Set() };
+  const botao = raiz.querySelector('button');
+  const busca = raiz.querySelector('input');
+  const lista = raiz.querySelector('.opcoes');
+  comp.desenhar = () => {
+    const termo = busca.value.trim().toLowerCase();
+    lista.innerHTML = comp.opcoes.filter(o => !termo || o.toLowerCase().indexOf(termo) !== -1).map(o =>
+      '<label><input type="checkbox" value="' + esc(o) + '"' + (comp.sel.has(o) ? ' checked' : '') + '> ' + esc(o) + '</label>').join('') ||
+      '<div class="meta">Nada encontrado.</div>';
+    botao.textContent = comp.sel.size === 0 ? 'Todos' : (comp.sel.size === 1 ? Array.from(comp.sel)[0] : comp.sel.size + ' selecionados');
+    botao.classList.toggle('ativo', comp.sel.size > 0);
+  };
+  comp.definirOpcoes = ops => {
+    comp.opcoes = ops;
+    Array.from(comp.sel).forEach(v => { if (ops.indexOf(v) === -1) comp.sel.delete(v); });
+    comp.desenhar();
+  };
+  comp.limpar = () => { comp.sel.clear(); comp.desenhar(); };
+  comp.passa = vals => {
+    if (!comp.sel.size) return true;
+    const arr = Array.isArray(vals) ? vals : [vals];
+    return arr.some(v => comp.sel.has(v));
+  };
+  botao.onclick = e => {
+    e.stopPropagation();
+    const abrir = !raiz.classList.contains('aberto');
+    document.querySelectorAll('.multi.aberto').forEach(x => x.classList.remove('aberto'));
+    if (abrir) { raiz.classList.add('aberto'); busca.focus(); }
+  };
+  raiz.querySelector('.pop').onclick = e => e.stopPropagation();
+  busca.oninput = comp.desenhar;
+  lista.onchange = e => {
+    if (e.target.checked) comp.sel.add(e.target.value); else comp.sel.delete(e.target.value);
+    comp.desenhar();
+    aoMudar();
+  };
+  raiz.querySelector('.acoes').onclick = e => {
+    const a = e.target.getAttribute('data-a');
+    if (a === 'todos') comp.opcoes.forEach(o => comp.sel.add(o));
+    if (a === 'limpar') comp.sel.clear();
+    comp.desenhar();
+    aoMudar();
+  };
+  MULTI[id] = comp;
+  comp.desenhar();
+  return comp;
+}
+document.addEventListener('click', () => document.querySelectorAll('.multi.aberto').forEach(x => x.classList.remove('aberto')));
+
+/* ======================= período ======================= */
+function mudouPeriodo() {
+  document.getElementById('campoDatas').style.display = document.getElementById('fPeriodo').value === 'custom' ? 'flex' : 'none';
+  renderizar();
+}
+function intervaloPeriodo() {
+  const v = document.getElementById('fPeriodo').value;
+  const hoje = new Date();
+  const y = hoje.getFullYear(), m = hoje.getMonth();
+  const inicioHoje = new Date(y, m, hoje.getDate()).getTime();
+  const fimHoje = inicioHoje + DIA - 1;
+  const ini = (a, b, c) => new Date(a, b, c || 1).getTime();
+  switch (v) {
+    case '30': case '90': case '180': return [inicioHoje - (Number(v) - 1) * DIA, fimHoje];
+    case '365': return [ini(y - 1, m, hoje.getDate()), fimHoje];
+    case 'mes': return [ini(y, m), fimHoje];
+    case 'mesAnt': return [ini(y, m - 1), ini(y, m) - 1];
+    case 'tri': { const q = Math.floor(m / 3) * 3; return [ini(y, q), fimHoje]; }
+    case 'triAnt': { const q = Math.floor(m / 3) * 3; return [ini(y, q - 3), ini(y, q) - 1]; }
+    case 'sem': { const s = m < 6 ? 0 : 6; return [ini(y, s), fimHoje]; }
+    case 'semAnt': { const s = m < 6 ? 0 : 6; return [ini(y, s - 6), ini(y, s) - 1]; }
+    case 'ano': return [ini(y, 0), fimHoje];
+    case 'anoAnt': return [ini(y - 1, 0), ini(y, 0) - 1];
+    case 'custom': {
+      const de = document.getElementById('fDe').value, ate = document.getElementById('fAte').value;
+      const p = s => { const a = s.split('-'); return new Date(Number(a[0]), Number(a[1]) - 1, Number(a[2])).getTime(); };
+      return [de ? p(de) : 0, ate ? p(ate) + DIA - 1 : Infinity];
+    }
+    default: return [0, Infinity];
+  }
+}
+
+/* NOVO (painel 1.2): período anterior para o comparativo da faixa de fontes.
+ *  - Mês/Trimestre/Semestre/Ano atual: o mesmo trecho no período anterior (1–8/out × 1–8/set);
+ *  - Mês/Trimestre/Semestre/Ano anterior: o período inteiro antes dele;
+ *  - Corridos e Personalizado: a janela de mesmo tamanho logo antes;
+ *  - Todo o histórico: sem comparativo (null). */
+const MESES_PERIODO = { mes: 1, mesAnt: 1, tri: 3, triAnt: 3, sem: 6, semAnt: 6, ano: 12, anoAnt: 12 };
+function somarMeses(ms, k) {
+  const d = new Date(ms);
+  const alvo = new Date(d.getFullYear(), d.getMonth() + k, 1);
+  const ultimoDia = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
+  return new Date(alvo.getFullYear(), alvo.getMonth(), Math.min(d.getDate(), ultimoDia),
+    d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()).getTime();
+}
+function periodoAnterior() {
+  const v = document.getElementById('fPeriodo').value;
+  const [de, ate] = intervaloPeriodo();
+  if (!de || !isFinite(ate)) return null;
+  const k = MESES_PERIODO[v];
+  if (k && /Ant$/.test(v)) return [somarMeses(de, -k), de - 1];
+  if (k) return [somarMeses(de, -k), somarMeses(ate, -k)];
+  return [de - (ate - de + 1), de - 1];
+}
+function textoComparativo(atual, anterior) {
+  if (anterior === null || anterior === undefined) return '';
+  if (!anterior) return atual ? 'antes 0' : '';
+  const v = Math.round((atual - anterior) * 100 / anterior);
+  return (v > 0 ? '▲ +' : (v < 0 ? '▼ ' : '= ')) + v + '% · antes ' + anterior;
+}
+
+/* ======================= carga ======================= */
+function carregar() {
+  google.script.run
+    .withSuccessHandler(json => {
+      DADOS = JSON.parse(json);
+      CARD = {};
+      DADOS.cards.forEach(c => { CARD[c.id] = c; });
+      DADOS.permanencias.forEach(p => {
+        if (p.sit.indexOf('Estourado') === 0 && CARD[p.card]) CARD[p.card].exc = (CARD[p.card].exc || 0) + p.x;
+      });
+      montarOpcoesTrello();
+      montarCardPorProtocolo();
+      mostrarInfoControle();
+      renderizar();
+      document.getElementById('carregando').style.display = 'none';
+    })
+    .withFailureHandler(e => {
+      document.getElementById('carregando').textContent = '❌ Não foi possível carregar os chamados: ' + e.message;
+    })
+    .webObterDadosPainelChamados();
+}
+
+function carregarAtend() {
+  document.getElementById('infoAtend').textContent = 'Carregando atendimentos…';
+  google.script.run
+    .withSuccessHandler(json => {
+      ATEND = JSON.parse(json);
+      montarOpcoesAtend();
+      montarCardPorProtocolo();
+      document.getElementById('infoAtend').textContent = 'Atendimentos lidos às ' + fmtHora(ATEND.geradoEm);
+      renderizar();
+    })
+    .withFailureHandler(e => { document.getElementById('infoAtend').textContent = '❌ Atendimentos: ' + e.message; })
+    .webObterAtendimentosJivo();
+}
+
+/* NOVO (painel 1.4): e-mails da aba EMAILS. */
+function carregarEmails() {
+  document.getElementById('infoEmail').textContent = 'Carregando e-mails…';
+  google.script.run
+    .withSuccessHandler(json => {
+      EMAILS = JSON.parse(json);
+      montarOpcoesEmail();
+      document.getElementById('infoEmail').textContent = 'E-mails lidos às ' + fmtHora(EMAILS.geradoEm);
+      renderizar();
+    })
+    .withFailureHandler(e => { document.getElementById('infoEmail').textContent = '❌ E-mails: ' + e.message; })
+    .webObterEmailsPainelChamados();
+}
+
+/**
+ * ALTERADO (painel 1.3): chave única de protocolo do Jivo. Aceita também o formato antigo
+ * com a inicial do analista: "15618K026" -> "JIVO15618". "J16465.2" -> "JIVO16465.2".
+ * Fora do padrão do Jivo (ex.: "WPP031") devolve ''.
+ */
+function chaveProt(p) {
+  const s = String(p == null ? '' : p).toUpperCase().replace(/\s+/g, '');
+  const m = /^(?:JIVO|J)?(\d+)(?:[A-Z]\d{0,4})?(\.\d+)?$/.exec(s);
+  return m ? 'JIVO' + m[1] + (m[2] || '') : '';
+}
+
+/**
+ * ALTERADO (painel 1.2): chave -> link do card. Fontes:
+ *  1) coluna Protocolos da BASE (só as entradas que começam com JIVO) — inclui o histórico;
+ *  2) CARDS_TRELLO (cards criados pelo Lista Ai) — por último, prevalece sobre a BASE.
+ * A leitura do título ("Jivo 16234") saiu: a coluna Protocolos da BASE já vem do título.
+ */
+function montarCardPorProtocolo() {
+  const m = {};
+  if (DADOS) {
+    DADOS.cards.forEach(c => {
+      (c.pr || []).forEach(p => {
+        if (String(p).trim().toUpperCase().indexOf('JIVO') !== 0) return;
+        const k = chaveProt(p);
+        if (k && c.u && !m[k]) m[k] = c.u;
+      });
+    });
+  }
+  if (ATEND && ATEND.cards) {
+    Object.keys(ATEND.cards).forEach(p => { const k = chaveProt(p); if (k) m[k] = ATEND.cards[p]; });
+  }
+  CARD_POR_PROT = m;
+}
+function linkCard(p) { const k = chaveProt(p); return k ? (CARD_POR_PROT[k] || '') : ''; }
+/* NOVO (painel 1.4): link do card de um atendimento de qualquer canal (o e-mail já traz o seu). */
+function linkAtend(e) { return e.cl || (e.o === 'E' ? '' : linkCard(e.p)); }
+
+function montarOpcoesTrello() {
+  const ord = arr => unicos(arr).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const cs = DADOS.cards;
+  MULTI.mCliente.definirOpcoes(ord([].concat.apply([], cs.map(c => c.cli))));
+  MULTI.mXml.definirOpcoes(ord([].concat.apply([], cs.map(c => c.xml))));
+  MULTI.mLista.definirOpcoes(ord(cs.map(c => c.l)));
+  MULTI.mStatus.definirOpcoes(ord(cs.map(c => c.s)));
+  MULTI.mMembro.definirOpcoes(ord([].concat.apply([], cs.map(c => c.mem))));
+  const dv = DADOS.devolucoes.filter(d => d.sit === 'Devolução');
+  MULTI.mNivel.definirOpcoes(ord(dv.map(d => d.n)));
+  MULTI.mTipoDev.definirOpcoes(ord(dv.map(d => d.tipo)));
+  MULTI.mMotivo.definirOpcoes(ord([].concat.apply([], dv.map(d => d.mot))));
+  MULTI.mListaPerm.definirOpcoes(ord(DADOS.permanencias.filter(p => p.sla > 0).map(p => p.l)));
+  MULTI.mSitSla.definirOpcoes(['Dentro', 'Estourado', 'Em aberto', 'Estourado (em aberto)']);
+}
+function montarOpcoesAtend() {
+  const ord = arr => unicos(arr).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  MULTI.mAtAnalista.definirOpcoes(ord(ATEND.eventos.map(e => e.a)));
+  MULTI.mAtCliente.definirOpcoes(ord(ATEND.eventos.map(e => e.cli || SEM_CLIENTE)));
+}
+/* NOVO (painel 1.4) */
+function respEmail(e) { return e.resp && e.resp.length ? e.resp : [SEM_RESP]; }
+function catEmail(e) { return (e.cat || '(sem categoria)') + (e.sub ? ' › ' + e.sub : ''); }
+function montarOpcoesEmail() {
+  const ord = arr => unicos(arr).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const es = EMAILS.emails;
+  MULTI.mEmAnalista.definirOpcoes(ord([].concat.apply([], es.map(respEmail))));
+  MULTI.mEmCliente.definirOpcoes(ord(es.map(e => e.cli || SEM_CLIENTE)));
+  MULTI.mEmCategoria.definirOpcoes(ord(es.map(e => e.cat || '(sem categoria)')));
+}
+
+function mostrarInfoControle() {
+  const c = DADOS.controle || {};
+  document.getElementById('infoAtualizacao').textContent = 'Trello atualizado em ' + (c.ultimaOkMs ? fmtDataHora(c.ultimaOkMs) : '—');
+  const aviso = document.getElementById('avisoErroCarga');
+  if (c.situacao === 'ERRO') {
+    aviso.style.display = 'block';
+    aviso.textContent = '⚠️ A última tentativa de carga (' + fmtDataHora(c.ultimaExecMs) + ') falhou: ' + (c.detalhe || 'sem detalhe') + '. O painel mostra os dados da última carga com sucesso.';
+  } else {
+    aviso.style.display = 'none';
+  }
+}
+
+function limparFiltrosTrello() {
+  ['mCliente', 'mXml', 'mLista', 'mStatus', 'mMembro', 'mNivel', 'mTipoDev', 'mMotivo', 'mListaPerm', 'mSitSla'].forEach(k => MULTI[k].limpar());
+  document.getElementById('fBase').value = 'cr';
+  document.getElementById('fBusca').value = '';
+  document.getElementById('fReinc').checked = false;
+  renderizar();
+}
+function limparFiltrosAtend() {
+  MULTI.mAtAnalista.limpar();
+  MULTI.mAtCliente.limpar();
+  document.getElementById('fBuscaAt').value = '';
+  document.getElementById('fSoCard').checked = false;
+  renderizar();
+}
+/* NOVO (painel 1.4) */
+function limparFiltrosEmail() {
+  MULTI.mEmAnalista.limpar();
+  MULTI.mEmCliente.limpar();
+  MULTI.mEmCategoria.limpar();
+  document.getElementById('fBuscaEm').value = '';
+  document.getElementById('fEmAbertos').checked = false;
+  renderizar();
+}
+
+/* ======================= filtros aplicados ======================= */
+function cardsFiltrados() {
+  if (!DADOS) return [];
+  const [de, ate] = intervaloPeriodo();
+  const base = document.getElementById('fBase').value;
+  return DADOS.cards.filter(c => {
+    const d = c[base];
+    if (!d || d < de || d > ate) return false;
+    return MULTI.mCliente.passa(c.cli) && MULTI.mXml.passa(c.xml) && MULTI.mLista.passa(c.l) &&
+      MULTI.mStatus.passa(c.s) && MULTI.mMembro.passa(c.mem);
+  });
+}
+function atendFiltrados() {
+  if (!ATEND) return [];
+  const [de, ate] = intervaloPeriodo();
+  return ATEND.eventos.filter(e => e.d >= de && e.d <= ate &&
+    MULTI.mAtAnalista.passa(e.a) && MULTI.mAtCliente.passa(e.cli || SEM_CLIENTE));
+}
+/* NOVO (painel 1.4): e-mails que passam nos filtros da aba (sem o período — cada indicador aplica o seu). */
+function emailsFiltrados() {
+  if (!EMAILS) return [];
+  return EMAILS.emails.filter(e => MULTI.mEmAnalista.passa(respEmail(e)) &&
+    MULTI.mEmCliente.passa(e.cli || SEM_CLIENTE) && MULTI.mEmCategoria.passa(e.cat || '(sem categoria)'));
+}
+function noPeriodo(ms, de, ate) { return !!ms && ms >= de && ms <= ate; }
+function conjunto(cards) { const s = new Set(); cards.forEach(c => s.add(c.id)); return s; }
+
+/* ALTERADO (painel 1.4): Visão geral não usa os filtros de fonte; Atendimentos Jivo e E-mails usam os seus. */
+function posicionarFiltros() {
+  const guarda = document.getElementById('guardaFiltros');
+  const fa = document.getElementById('filtrosAtend');
+  const fe = document.getElementById('filtrosEmail');
+  const ft = document.getElementById('filtrosTrello');
+  guarda.appendChild(fa);
+  guarda.appendChild(fe);
+  guarda.appendChild(ft);
+  if (ABA_ATUAL === 'atend') document.getElementById('slotAtendAba').appendChild(fa);
+  else if (ABA_ATUAL === 'email') document.getElementById('slotEmailAba').appendChild(fe);
+  else if (ABA_ATUAL !== 'geral') document.getElementById('slotTrelloAbas').appendChild(ft);
+}
+
+/* ======================= gráficos ======================= */
+/** series: [{ nome, grupos: [itens[]], cor?, valores? }]. opcoes.abrir(titulo, itens) no clique. */
+function desenhar(id, tipo, rotulos, series, opcoes) {
+  opcoes = opcoes || {};
+  if (GRAFICOS[id]) { GRAFICOS[id].destroy(); delete GRAFICOS[id]; }
+  const canvas = document.getElementById(id);
+  const wrap = canvas.parentElement;
+  wrap.querySelectorAll('.vazio').forEach(x => x.remove());
+  if (!rotulos.length) {
+    canvas.style.display = 'none';
+    wrap.insertAdjacentHTML('beforeend', '<div class="vazio">Sem dados para o período e filtros escolhidos.</div>');
+    return;
+  }
+  canvas.style.display = '';
+  if (opcoes.horizontal) wrap.style.height = Math.max(280, rotulos.length * 24 + 60) + 'px';
+  const abrir = opcoes.abrir || abrirLista;
+  GRAFICOS[id] = new Chart(canvas, {
+    type: tipo,
+    data: {
+      labels: rotulos,
+      datasets: series.map((s, i) => ({
+        label: s.nome,
+        data: s.valores || s.grupos.map(g => g.length),
+        backgroundColor: s.cor || (series.length === 1 && tipo !== 'line' ? CORES[0] : CORES[i % CORES.length]),
+        borderColor: s.cor || CORES[i % CORES.length],
+        tension: .25,
+        _grupos: s.grupos
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      indexAxis: opcoes.horizontal ? 'y' : 'x',
+      plugins: {
+        legend: { display: series.length > 1, position: 'bottom' },
+        tooltip: { callbacks: { label: ctx => (ctx.dataset.label ? ctx.dataset.label + ': ' : '') + ctx.formattedValue + (opcoes.sufixo || '') } }
+      },
+      scales: {
+        x: { stacked: !!opcoes.empilhado, ticks: { autoSkip: !opcoes.horizontal } },
+        y: { stacked: !!opcoes.empilhado, beginAtZero: true, max: opcoes.max, ticks: { precision: 0, autoSkip: false } }
+      },
+      onClick: (evt, els) => {
+        if (!els.length) return;
+        const el = els[0];
+        const grupos = GRAFICOS[id].data.datasets[el.datasetIndex]._grupos;
+        if (!grupos || !grupos[el.index]) return;
+        abrir(rotulos[el.index] + (series.length > 1 ? ' · ' + series[el.datasetIndex].nome : ''), grupos[el.index]);
+      },
+      onHover: (evt, els) => { evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; }
+    }
+  });
+}
+function barras(id, mapa, limite, horizontal, abrir) {
+  const ord = ordenarPorTamanho(mapa, limite);
+  desenhar(id, 'bar', ord.map(e => e[0]), [{ nome: '', grupos: ord.map(e => e[1]) }], { horizontal: horizontal, abrir: abrir });
+  return ord;
+}
+function porMes(id, tipo, mapas, opcoes) {
+  const meses = unicos([].concat.apply([], mapas.map(s => Array.from(s.mapa.keys())))).sort();
+  desenhar(id, tipo, meses.map(rotuloMes), mapas.map(s => ({
+    nome: s.nome, cor: s.cor, grupos: meses.map(k => s.mapa.get(k) || []),
+    valores: s.valoresFn ? meses.map(k => s.valoresFn(k)) : undefined
+  })), opcoes);
+}
+/** Quadro de números (estilo planilha) embaixo do gráfico. ALTERADO (painel 1.4): 4º parâmetro "abrir". */
+let RESUMO_ITENS = [];
+function resumo(divId, ord, titulo, abrir) {
+  document.getElementById(divId).innerHTML = ord.map(e => {
+    const i = RESUMO_ITENS.push({ titulo: titulo + ' · ' + e[0], itens: e[1], abrir: abrir }) - 1;
+    return '<span onclick="abrirResumo(' + i + ')">' + esc(e[0]) + '<b>' + e[1].length + '</b></span>';
+  }).join('');
+}
+function abrirResumo(i) { const r = RESUMO_ITENS[i]; if (r) (r.abrir || abrirListaAtend)(r.titulo, r.itens); }
+
+/* ======================= drill-down ======================= */
+function abrirLista(titulo, itens) {
+  const ids = unicos(itens.map(it => it.card || it.id));
+  const cards = ids.map(id => CARD[id]).filter(Boolean).sort((a, b) => b.cr - a.cr);
+  document.getElementById('modalTitulo').textContent = titulo + ' — ' + cards.length + ' card(s)' +
+    (itens.length !== cards.length ? ' / ' + itens.length + ' registro(s)' : '');
+  document.getElementById('modalCorpo').innerHTML = tabelaCards(cards);
+  document.getElementById('modal').style.display = 'flex';
+}
+function abrirListaAtend(titulo, itens) {
+  document.getElementById('modalTitulo').textContent = titulo + ' — ' + itens.length + ' registro(s)';
+  document.getElementById('modalCorpo').innerHTML = tabelaAtend(itens.slice().sort((a, b) => b.d - a.d));
+  document.getElementById('modal').style.display = 'flex';
+}
+/* NOVO (painel 1.4) */
+function abrirListaEmail(titulo, itens) {
+  const lista = unicos(itens).sort((a, b) => (b.as || b.ch) - (a.as || a.ch));
+  document.getElementById('modalTitulo').textContent = titulo + ' — ' + lista.length + ' e-mail(s)';
+  document.getElementById('modalCorpo').innerHTML = tabelaEmails(lista);
+  document.getElementById('modal').style.display = 'flex';
+}
+function fecharModal() { document.getElementById('modal').style.display = 'none'; }
+
+function tabelaCards(cards) {
+  if (!cards.length) return '<div class="vazio">Nenhum card.</div>';
+  return '<table><thead><tr><th>Card</th><th>Lista atual</th><th>Status</th><th>Cliente</th><th>Tipo xml</th>' +
+    '<th>Membros</th><th>Criado</th><th>Concluído</th><th class="num">Devol.</th><th class="num">SLAs estourados</th><th class="num">Tempo excedido</th></tr></thead><tbody>' +
+    cards.map(c => '<tr><td><a href="' + esc(c.u) + '" target="_blank" rel="noopener">' + esc(c.t) + '</a></td>' +
+      '<td>' + esc(c.l) + '</td><td>' + seloStatus(c.s) + '</td><td>' + esc(c.cli.join(', ')) + '</td>' +
+      '<td>' + esc(c.xml.join(', ')) + '</td><td>' + esc(c.mem.join(', ')) + '</td>' +
+      '<td>' + fmtData(c.cr) + '</td><td>' + fmtData(c.co) + '</td>' +
+      '<td class="num">' + (c.dv || '') + '</td><td class="num">' + (c.est || '') + '</td>' +
+      '<td class="num">' + (c.exc ? fmtHoras(c.exc) : '') + '</td></tr>').join('') +
+    '</tbody></table>';
+}
+/* ALTERADO (painel 1.4): Origem "E-mail" e link do card de qualquer canal (linkAtend). */
+function tabelaAtend(itens) {
+  if (!itens.length) return '<div class="vazio">Nenhum atendimento.</div>';
+  return '<table><thead><tr><th>Protocolo</th><th>Tipo</th><th>Data</th><th>Analista</th><th>Canal</th><th>Cliente</th>' +
+    '<th>Tipo de atendimento</th><th class="num">Duração</th><th>Origem</th><th>Card</th></tr></thead><tbody>' +
+    itens.map(e => {
+      const link = linkAtend(e);
+      return '<tr><td>' + esc(e.p || '—') + '</td><td>' + (e.k === 'R' ? '<span class="selo">Retorno</span>' : 'Atendimento') + '</td>' +
+        '<td>' + fmtDataHora(e.d) + '</td><td>' + esc(e.a) + '</td><td>' + esc(e.ca) + '</td><td>' + esc(e.cli || SEM_CLIENTE) + '</td>' +
+        '<td>' + esc(e.ti || '') + '</td><td class="num">' + (e.du != null ? fmtMin(e.du) : '') + '</td>' +
+        '<td>' + (e.o === 'H' ? 'Histórico' : (e.o === 'E' ? 'E-mail' : 'Lista Ai')) + '</td>' +
+        '<td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">🔗 Card</a>' : '') + '</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+/* NOVO (painel 1.4) */
+function seloEtapaEmail(e) {
+  if (e.k === 'concl') return '<span class="selo">' + esc(e.sit || 'Concluído') + '</span>' +
+    (e.cd === 1 ? ' <span class="selo verde">no prazo</span>' : (e.cd === 0 ? ' <span class="selo vermelho">após o prazo</span>' : ''));
+  const et = ETAPAS_EMAIL.find(x => x.k === e.k) || {};
+  return '<span class="selo ' + (et.selo || '') + '">' + esc(e.et || et.nome || '') + '</span>' +
+    (e.rb ? ' <span class="selo vermelho">💬 reaberto</span>' : '');
+}
+function tabelaEmails(itens) {
+  if (!itens.length) return '<div class="vazio">Nenhum e-mail.</div>';
+  return '<table><thead><tr><th>Protocolo</th><th>Assunto</th><th>Cliente</th><th>Responsáveis</th><th>Categoria</th>' +
+    '<th>Chegada</th><th>Assumido</th><th>Situação</th><th>Concluído</th><th>Origem</th><th>Card</th></tr></thead><tbody>' +
+    itens.map(e => '<tr><td>' + esc(e.p || '—') + '</td><td>' + esc(e.a) + '</td><td>' + esc(e.cli || SEM_CLIENTE) + '</td>' +
+      '<td>' + esc((e.resp || []).join(', ') || '—') + '</td><td>' + esc(catEmail(e)) + '</td>' +
+      '<td>' + fmtDataHora(e.ch) + '</td><td>' + fmtDataHora(e.as) + '</td><td>' + seloEtapaEmail(e) + '</td>' +
+      '<td>' + fmtDataHora(e.ce) + '</td><td>' + (e.o === 'Trello' ? 'Migrado (Trello)' : 'Gmail') + '</td>' +
+      '<td>' + (e.cl ? '<a href="' + esc(e.cl) + '" target="_blank" rel="noopener">🔗 Card</a>' : '') + '</td></tr>').join('') +
+    '</tbody></table>';
+}
+
+function seloStatus(s) {
+  const cls = s === 'Concluído' ? 'verde' : (s === 'Arquivado' ? '' : 'vermelho');
+  return '<span class="selo ' + cls + '">' + esc(s) + '</span>';
+}
+function kpi(rotulo, valor, sub, itens, titulo, abrir) {
+  const idx = KPI_ITENS.push({ itens: itens, titulo: titulo || rotulo, abrir: abrir || abrirLista }) - 1;
+  return '<div class="kpi" onclick="abrirKpi(' + idx + ')"><div class="rotulo">' + esc(rotulo) + '</div>' +
+    '<div class="valor">' + esc(valor) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div>';
+}
+function abrirKpi(i) { const k = KPI_ITENS[i]; if (k && k.itens) k.abrir(k.titulo, k.itens); }
+
+/* ALTERADO (painel 1.4): + aba E-mails. */
+function renderizar() {
+  KPI_ITENS = [];
+  RESUMO_ITENS = [];
+  const [de, ate] = intervaloPeriodo();
+  document.getElementById('infoPeriodo').textContent = de ? fmtData(de) + ' a ' + (isFinite(ate) ? fmtData(ate) : 'hoje') : 'Todo o histórico';
+
+  if (ABA_ATUAL === 'geral') { renderizarVisaoGeral(); return; }
+  if (ABA_ATUAL === 'atend') { renderizarAtend(''); return; }
+  if (ABA_ATUAL === 'email') { renderizarEmails(); return; }
+  if (!DADOS) return;
+  const cards = cardsFiltrados();
+  const ids = conjunto(cards);
+  const devs = DADOS.devolucoes.filter(d => ids.has(d.card));
+  const perms = DADOS.permanencias.filter(p => ids.has(p.card));
+  if (ABA_ATUAL === 'resumoT') renderizarGeral(cards, devs, perms);
+  if (ABA_ATUAL === 'dev') renderizarDev(cards, devs);
+  if (ABA_ATUAL === 'sla') renderizarSla(perms);
+  if (ABA_ATUAL === 'clientes') renderizarClientes(cards, devs);
+  if (ABA_ATUAL === 'cards') renderizarCards();
+}
+
+/** suf = 'G' (bloco da Visão geral) ou '' (aba Atendimentos Jivo). */
+function renderizarAtend(suf) {
+  const alvoKpi = document.getElementById(suf ? 'kpisAtendG' : 'kpisAtend');
+  if (!ATEND) { alvoKpi.innerHTML = '<div class="meta">Carregando atendimentos…</div>'; return; }
+  const ev = atendFiltrados();
+  const at = ev.filter(e => e.k === 'A');
+  const ret = ev.filter(e => e.k === 'R');
+  const comCard = at.filter(e => linkCard(e.p));
+  const clientes = unicos(at.map(e => e.cli).filter(Boolean));
+  const comDuracao = ev.filter(e => e.du != null);
+  const abrir = abrirListaAtend;
+
+  alvoKpi.innerHTML =
+    kpi('Atendimentos encerrados', at.length, unicos(at.map(e => e.a)).length + ' analista(s)', at, 'Atendimentos', abrir) +
+    kpi('Retornos', ret.length, '', ret, 'Retornos', abrir) +
+    kpi('Clientes atendidos', clientes.length, '', at, 'Atendimentos', abrir) +
+    kpi('Viraram chamado', comCard.length, pct(comCard.length, at.length) + '% dos atendimentos', comCard, 'Atendimentos que viraram chamado', abrir) +
+    kpi('Duração mediana', fmtMin(mediana(comDuracao.map(e => e.du))), 'atendimentos e retornos', comDuracao, 'Atendimentos com duração', abrir);
+
+  resumo('rAtAnalista' + suf, barras('gAtAnalista' + suf, agrupar(at, e => e.a), 0, true, abrir), 'Atendimentos');
+  resumo('rAtCliente' + suf, barras('gAtCliente' + suf, agrupar(at, e => e.cli || SEM_CLIENTE), 0, true, abrir), 'Atendimentos');
+  resumo('rAtRet' + suf, barras('gAtRet' + suf, agrupar(ret, e => e.a), 0, true, abrir), 'Retornos');
+
+  if (!suf) {
+    const mA = agrupar(at, e => chaveDia(e.d)), mR = agrupar(ret, e => chaveDia(e.d));
+    const dias = unicos(Array.from(mA.keys()).concat(Array.from(mR.keys()))).sort();
+    desenhar('gAtDia', 'bar', dias.map(rotuloDia), [
+      { nome: 'Atendimentos', cor: CORES[0], grupos: dias.map(k => mA.get(k) || []) },
+      { nome: 'Retornos', cor: CORES[1], grupos: dias.map(k => mR.get(k) || []) }
+    ], { empilhado: true, abrir: abrir });
+
+    // NOVO (1.3): tipo de atendimento (só o histórico tem) e duração mediana por analista.
+    resumo('rAtTipo', barras('gAtTipo', agrupar(at.filter(e => e.ti), e => e.ti), 0, true, abrir), 'Tipo');
+    const durPorAn = ordenarPorTamanho(agrupar(comDuracao, e => e.a));
+    desenhar('gAtDuracao', 'bar', durPorAn.map(x => x[0]), [{
+      nome: '', grupos: durPorAn.map(x => x[1]), valores: durPorAn.map(x => mediana(x[1].map(e => e.du)))
+    }], { horizontal: true, abrir: abrir, sufixo: ' min' });
+
+    renderizarTabelaAtend();
+  }
+}
+
+/* ALTERADO (painel 1.3): a filtragem da tabela virou uma função própria — o CSV usa a mesma. */
+function linhasTabelaAtend() {
+  const termo = document.getElementById('fBuscaAt').value.trim().toLowerCase();
+  let ev = atendFiltrados();
+  if (document.getElementById('fSoCard').checked) ev = ev.filter(e => e.k === 'A' && linkCard(e.p));
+  if (termo) ev = ev.filter(e => [e.p, e.a, e.ca, e.cli, e.ti].join(' ').toLowerCase().indexOf(termo) !== -1);
+  return ev.sort((a, b) => b.d - a.d);
+}
+function renderizarTabelaAtend() {
+  if (!ATEND) return;
+  const ev = linhasTabelaAtend();
+  const LIMITE = 500;
+  document.getElementById('contAt').textContent = ev.length + ' registro(s)' + (ev.length > LIMITE ? ' — mostrando os ' + LIMITE + ' mais recentes (o CSV leva todos)' : '');
+  document.getElementById('tabAtend').innerHTML = tabelaAtend(ev.slice(0, LIMITE));
+}
+
+/**
+ * NOVO (painel 1.3): ⬇️ Baixar CSV — as mesmas linhas da tabela (período, filtros, busca e
+ * "só os que viraram chamado"), todas, sem o limite de 500. Separador ";", com BOM (acentos certos
+ * no Excel/Sheets) e decimais com vírgula.
+ */
+function baixarCsvAtend() {
+  if (!ATEND) return;
+  const ev = linhasTabelaAtend().slice().reverse(); // do mais antigo para o mais recente
+  const cel = v => { const s = String(v == null ? '' : v); return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const num = v => (v == null || isNaN(v)) ? '' : String(v).replace('.', ',');
+  const cab = ['Data', 'Hora', 'Tipo', 'Protocolo', 'Analista', 'Canal', 'Cliente', 'Tipo de atendimento',
+    'Duração (min)', '1ª resposta (min)', 'Virou chamado', 'Link do card', 'Origem'];
+  const linhas = ev.map(e => {
+    const link = linkCard(e.p);
+    return [fmtData(e.d), fmtHora(e.d), e.k === 'R' ? 'Retorno' : 'Atendimento', e.p, e.a, e.ca, e.cli || SEM_CLIENTE,
+      e.ti || '', num(e.du), num(e.pr), link ? 'SIM' : 'NÃO', link, e.o === 'H' ? 'Histórico (Jivo)' : 'Lista Ai']
+      .map(cel).join(';');
+  });
+  const [de, ate] = intervaloPeriodo();
+  const nome = 'atendimentos_' + (de ? chaveDia(de) : 'inicio') + '_a_' + (isFinite(ate) ? chaveDia(ate) : 'hoje') + '.csv';
+  baixarCsv(nome, cab, linhas);
+}
+/* NOVO (painel 1.4): gera e baixa o arquivo CSV (usado pelos CSVs do Jivo e dos e-mails). */
+function baixarCsv(nome, cab, linhas) {
+  const blob = new Blob(['﻿' + [cab.join(';')].concat(linhas).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+/* ======================= E-mails (painel 1.4) ======================= */
+function renderizarEmails() {
+  const alvo = document.getElementById('kpisEmail');
+  if (!EMAILS) { alvo.innerHTML = '<div class="meta">Carregando e-mails…</div>'; return; }
+  const [de, ate] = intervaloPeriodo();
+  const filt = emailsFiltrados();
+  const assumidos = filt.filter(e => noPeriodo(e.as, de, ate));
+  const recebidos = filt.filter(e => noPeriodo(e.ch, de, ate));
+  const concluidos = filt.filter(e => e.k === 'concl' && noPeriodo(e.ce, de, ate));
+  const comPrazo = concluidos.filter(e => e.cd !== null && e.cd !== undefined);
+  const noPrazo = comPrazo.filter(e => e.cd === 1);
+  const abertos = filt.filter(e => e.k !== 'concl');
+  const aguard = abertos.filter(e => e.k === 'aguard');
+  const fora = abertos.filter(e => e.k === 'fora');
+  const reab = abertos.filter(e => e.rb);
+  const comCard = assumidos.filter(e => e.cl);
+  const analistas = unicos([].concat.apply([], assumidos.map(e => e.resp || [])));
+  const abrir = abrirListaEmail;
+
+  alvo.innerHTML =
+    kpi('Assumidos', assumidos.length, analistas.length + ' analista(s)', assumidos, 'E-mails assumidos', abrir) +
+    kpi('Recebidos', recebidos.length, 'pela data de chegada', recebidos, 'E-mails recebidos', abrir) +
+    kpi('Concluídos', concluidos.length, comPrazo.length ? pct(noPrazo.length, comPrazo.length) + '% dentro do prazo' : 'sem prazo para comparar', concluidos, 'E-mails concluídos', abrir) +
+    kpi('Em aberto agora', abertos.length, aguard.length + ' aguardando assumir', abertos, 'E-mails em aberto', abrir) +
+    kpi('Fora do prazo agora', fora.length, pct(fora.length, abertos.length) + '% dos abertos', fora, 'E-mails fora do prazo', abrir) +
+    kpi('Viraram chamado', comCard.length, pct(comCard.length, assumidos.length) + '% dos assumidos', comCard, 'E-mails que viraram chamado', abrir) +
+    kpi('Reabertos agora', reab.length, 'cliente escreveu de novo', reab, 'E-mails reabertos', abrir);
+
+  resumo('rEmAnalista', barras('gEmAnalista', agrupar(assumidos, respEmail), 0, true, abrir), 'E-mails', abrir);
+  resumo('rEmCliente', barras('gEmCliente', agrupar(assumidos, e => e.cli || SEM_CLIENTE), 0, true, abrir), 'E-mails', abrir);
+  resumo('rEmCategoria', barras('gEmCategoria', agrupar(assumidos, catEmail), 0, true, abrir), 'E-mails', abrir);
+
+  const mA = agrupar(assumidos, e => chaveSemana(e.as)), mC = agrupar(concluidos, e => chaveSemana(e.ce));
+  const semanas = unicos(Array.from(mA.keys()).concat(Array.from(mC.keys()))).sort();
+  desenhar('gEmSemana', 'bar', semanas.map(k => 'Sem. ' + rotuloDia(k)), [
+    { nome: 'Assumidos', cor: CORES[0], grupos: semanas.map(k => mA.get(k) || []) },
+    { nome: 'Concluídos', cor: CORES[2], grupos: semanas.map(k => mC.get(k) || []) }
+  ], { abrir: abrir });
+
+  const etapas = ETAPAS_EMAIL.filter(et => abertos.some(e => e.k === et.k));
+  desenhar('gEmSla', 'bar', etapas.map(et => et.nome), [{
+    nome: '', grupos: etapas.map(et => abertos.filter(e => e.k === et.k))
+  }], { abrir: abrir });
+  if (GRAFICOS.gEmSla) {
+    GRAFICOS.gEmSla.data.datasets[0].backgroundColor = etapas.map(et => et.cor);
+    GRAFICOS.gEmSla.update();
+  }
+
+  renderizarTabelaEmail();
+}
+
+/** Linhas da tabela/CSV: e-mails recebidos, assumidos ou concluídos no período (+ busca e "só em aberto"). */
+function linhasTabelaEmail() {
+  const [de, ate] = intervaloPeriodo();
+  const termo = document.getElementById('fBuscaEm').value.trim().toLowerCase();
+  let es = emailsFiltrados().filter(e => noPeriodo(e.as, de, ate) || noPeriodo(e.ch, de, ate) || noPeriodo(e.ce, de, ate));
+  if (document.getElementById('fEmAbertos').checked) es = es.filter(e => e.k !== 'concl');
+  if (termo) es = es.filter(e => [e.p, e.a, e.cli, (e.resp || []).join(' '), e.cat, e.sub, e.et].join(' ').toLowerCase().indexOf(termo) !== -1);
+  return es.sort((a, b) => (b.as || b.ch) - (a.as || a.ch));
+}
+function renderizarTabelaEmail() {
+  if (!EMAILS) return;
+  const es = linhasTabelaEmail();
+  const LIMITE = 500;
+  document.getElementById('contEm').textContent = es.length + ' e-mail(s)' + (es.length > LIMITE ? ' — mostrando os ' + LIMITE + ' mais recentes (o CSV leva todos)' : '');
+  document.getElementById('tabEmail').innerHTML = tabelaEmails(es.slice(0, LIMITE));
+}
+function baixarCsvEmail() {
+  if (!EMAILS) return;
+  const es = linhasTabelaEmail().slice().reverse();
+  const cel = v => { const s = String(v == null ? '' : v); return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const etapaTxt = e => e.k === 'concl' ? (e.sit || 'Concluído') : ((ETAPAS_EMAIL.find(x => x.k === e.k) || {}).nome || '');
+  const cab = ['Protocolo', 'Assunto', 'Cliente', 'Responsáveis', 'Categoria', 'Subcategoria', 'Chegada', 'Assumido em',
+    'Situação', 'Etapa do SLA', 'Prazo final', 'Concluído em', 'Concluído no prazo', 'Reaberto', 'Origem', 'Link do card'];
+  const linhas = es.map(e => [e.p, e.a, e.cli || SEM_CLIENTE, (e.resp || []).join(', '), e.cat, e.sub,
+    fmtDataHora(e.ch), fmtDataHora(e.as), e.sit, etapaTxt(e), fmtDataHora(e.pz), fmtDataHora(e.ce),
+    e.cd === 1 ? 'SIM' : (e.cd === 0 ? 'NÃO' : ''), e.rb ? 'SIM' : '', e.o === 'Trello' ? 'Migrado (Trello)' : 'Gmail', e.cl || '']
+    .map(cel).join(';'));
+  const [de, ate] = intervaloPeriodo();
+  baixarCsv('emails_' + (de ? chaveDia(de) : 'inicio') + '_a_' + (isFinite(ate) ? chaveDia(ate) : 'hoje') + '.csv', cab, linhas);
+}
+
+/* ======================= Visão geral (painel 1.2) ======================= */
+function atendNoPeriodo(de, ate) { return ATEND ? ATEND.eventos.filter(e => e.d >= de && e.d <= ate) : []; }
+function cardsCriadosNoPeriodo(de, ate) { return DADOS ? DADOS.cards.filter(c => c.cr && c.cr >= de && c.cr <= ate) : []; }
+/* NOVO (painel 1.4): e-mails que somam como atendimento — categoria Suporte, pela data em que foram assumidos. */
+function emailsSomaNoPeriodo(de, ate) { return EMAILS ? EMAILS.emails.filter(e => e.su && noPeriodo(e.as, de, ate)) : []; }
+function emailComoAtend(e) {
+  return { d: e.as, p: e.p || '(sem protocolo)', a: (e.resp || []).join(', ') || SEM_RESP, ca: 'E-mail', cli: e.cli,
+    k: 'A', ti: catEmail(e), du: null, pr: null, o: 'E', cl: e.cl };
+}
+function chaveSemana(ms) {
+  const d = new Date(ms);
+  return chaveDia(new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7)).getTime());
+}
+function irParaAba(aba) {
+  const b = document.querySelector('#abas button[data-aba="' + aba + '"]');
+  if (b) { b.click(); window.scrollTo(0, 0); }
+}
+/** aba = aba que o clique abre; sem aba = cartão "em breve". */
+function cartaoFonte(titulo, valor, sub, comparativo, aba) {
+  return '<div class="fonte' + (aba ? '' : ' embreve') + '"' + (aba ? ' onclick="irParaAba(\'' + aba + '\')"' : '') + '>' +
+    '<div class="topo"><span>' + esc(titulo) + '</span>' + (aba ? '<span>Ver detalhes →</span>' : '<span class="selo-breve">em breve</span>') + '</div>' +
+    '<div class="valor">' + esc(valor) + '</div><div class="sub">' + esc(sub) + '</div>' +
+    (comparativo ? '<div class="comparativo">' + esc(comparativo) + '</div>' : '') + '</div>';
+}
+
+/* ALTERADO (painel 1.4): cartão E-mail preenchido e e-mail somado aos indicadores. */
+function renderizarVisaoGeral() {
+  const [de, ate] = intervaloPeriodo();
+  const ant = periodoAnterior();
+  const at = atendNoPeriodo(de, ate).filter(e => e.k === 'A');
+  const ret = atendNoPeriodo(de, ate).filter(e => e.k === 'R');
+  const atAnt = ant ? atendNoPeriodo(ant[0], ant[1]).filter(e => e.k === 'A').length : null;
+  const cr = cardsCriadosNoPeriodo(de, ate);
+  const crAnt = ant ? cardsCriadosNoPeriodo(ant[0], ant[1]).length : null;
+  const andamento = DADOS ? DADOS.cards.filter(c => c.s === 'Em andamento') : [];
+
+  // E-mails: só a categoria Suporte soma como atendimento (pela data em que foi assumido).
+  const emSoma = emailsSomaNoPeriodo(de, ate);
+  const emAnt = (ant && EMAILS) ? emailsSomaNoPeriodo(ant[0], ant[1]).length : null;
+  const emAbertos = EMAILS ? EMAILS.emails.filter(e => e.k !== 'concl') : [];
+  const emFora = emAbertos.filter(e => e.k === 'fora');
+  const atEmail = emSoma.map(emailComoAtend);
+
+  // 1) Faixa de fontes
+  document.getElementById('faixaFontes').innerHTML =
+    cartaoFonte('🎧 Jivo', ATEND ? at.length : '…', ATEND ? 'atendimentos · ' + ret.length + ' retorno(s)' : 'carregando',
+      ATEND ? textoComparativo(at.length, atAnt) : '', 'atend') +
+    cartaoFonte('📧 E-mail', EMAILS ? emSoma.length : '…',
+      EMAILS ? 'assumidos (Suporte) · ' + emAbertos.length + ' em aberto · ' + emFora.length + ' fora do prazo' : 'carregando',
+      EMAILS ? textoComparativo(emSoma.length, emAnt) : '', 'email') +
+    cartaoFonte('🗂️ Passagem (Trello)', DADOS ? cr.length : '…', DADOS ? 'cards criados · ' + andamento.length + ' em andamento agora' : 'carregando',
+      DADOS ? textoComparativo(cr.length, crAnt) : '', 'resumoT');
+
+  // 2) Indicadores somados
+  const alvo = document.getElementById('kpisTotal');
+  if (!ATEND) { alvo.innerHTML = '<div class="meta">Carregando atendimentos…</div>'; return; }
+  const todos = at.concat(atEmail);
+  const comCard = todos.filter(e => linkAtend(e));
+  const clientes = unicos(todos.map(e => e.cli).filter(Boolean));
+  const abrir = abrirListaAtend;
+  alvo.innerHTML =
+    kpi('Atendimentos (todos os canais)', todos.length, 'Jivo ' + at.length + ' · E-mail ' + (EMAILS ? atEmail.length : '…'), todos, 'Atendimentos', abrir) +
+    kpi('Clientes atendidos', clientes.length, '', todos, 'Atendimentos', abrir) +
+    kpi('Viraram chamado', comCard.length, pct(comCard.length, todos.length) + '% dos atendimentos', comCard, 'Atendimentos que viraram chamado', abrir) +
+    '<div class="kpi embreve"><div class="rotulo">Erros</div><div class="valor">—</div><div class="sub">em breve</div></div>';
+
+  // 3) Atendimentos por cliente (top 15), por canal e se virou chamado
+  const porCli = ordenarPorTamanho(agrupar(todos, e => e.cli || SEM_CLIENTE), 15);
+  desenhar('gTotCliente', 'bar', porCli.map(x => x[0]), [
+    { nome: 'Jivo · virou chamado', cor: CORES[2], grupos: porCli.map(x => x[1].filter(e => e.o !== 'E' && linkCard(e.p))) },
+    { nome: 'Jivo · demais', cor: CORES[0], grupos: porCli.map(x => x[1].filter(e => e.o !== 'E' && !linkCard(e.p))) },
+    { nome: 'E-mail', cor: CORES[1], grupos: porCli.map(x => x[1].filter(e => e.o === 'E')) }
+  ], { horizontal: true, empilhado: true, abrir: abrir });
+
+  // 4) Volume por semana, por canal
+  const porSem = agrupar(at, e => chaveSemana(e.d));
+  const porSemE = agrupar(atEmail, e => chaveSemana(e.d));
+  const semanas = unicos(Array.from(porSem.keys()).concat(Array.from(porSemE.keys()))).sort();
+  desenhar('gTotSemana', 'line', semanas.map(k => 'Sem. ' + rotuloDia(k)), [
+    { nome: 'Jivo', cor: CORES[0], grupos: semanas.map(k => porSem.get(k) || []) },
+    { nome: 'E-mail', cor: CORES[1], grupos: semanas.map(k => porSemE.get(k) || []) }
+  ], { abrir: abrir });
+}
+
+function renderizarGeral(cards, devs, perms) {
+  const concl = cards.filter(c => c.s === 'Concluído');
+  const andam = cards.filter(c => c.s === 'Em andamento');
+  const conf = devs.filter(d => d.sit === 'Devolução');
+  const aConferir = devs.filter(d => d.sit.indexOf('conferir') !== -1);
+  const fechadas = perms.filter(p => p.sit === 'Dentro' || p.sit === 'Estourado');
+  const est = fechadas.filter(p => p.sit === 'Estourado');
+  const estAberto = perms.filter(p => p.sit === 'Estourado (em aberto)');
+  const reinc = cards.filter(c => c.dv >= 2);
+
+  document.getElementById('kpisGeral').innerHTML =
+    kpi('Cards no período', cards.length, '', cards) +
+    kpi('Concluídos', concl.length, pct(concl.length, cards.length) + '% do período', concl) +
+    kpi('Em andamento', andam.length, '', andam) +
+    kpi('Devoluções confirmadas', conf.length, unicos(conf.map(d => d.card)).length + ' card(s)', conf) +
+    kpi('Retornos a conferir', aConferir.length, '', aConferir) +
+    kpi('Cards reincidentes', reinc.length, '2+ devoluções', reinc) +
+    kpi('SLA estourado', pct(est.length, fechadas.length) + '%', est.length + ' de ' + fechadas.length + ' passagens', est, 'Passagens com SLA estourado') +
+    kpi('Estourados em aberto', estAberto.length, 'agora', estAberto);
+
+  porMes('gMes', 'bar', [
+    { nome: 'Criados', mapa: agrupar(cards.filter(c => c.cr), c => chaveMes(c.cr)) },
+    { nome: 'Concluídos', mapa: agrupar(cards.filter(c => c.co), c => chaveMes(c.co)) }
+  ]);
+  barras('gAndamento', agrupar(andam, c => c.l), 0, true);
+}
+
+function renderizarDev(cards, devs) {
+  const conf = devs.filter(d => d.sit === 'Devolução' &&
+    MULTI.mNivel.passa(d.n) && MULTI.mTipoDev.passa(d.tipo) && MULTI.mMotivo.passa(d.mot));
+  const aConferir = devs.filter(d => d.sit.indexOf('conferir') !== -1);
+  const conclusivos = devs.filter(d => d.sit === 'Retorno conclusivo');
+  const semMotivo = conf.filter(d => !d.mot.length);
+  const comSla = conf.filter(d => d.e === 'SIM' || d.e === 'NÃO');
+  const slaEst = comSla.filter(d => d.e === 'SIM');
+
+  document.getElementById('kpisDev').innerHTML =
+    kpi('Devoluções confirmadas', conf.length, unicos(conf.map(d => d.card)).length + ' card(s)', conf) +
+    kpi('A conferir', aConferir.length, 'sem justificativa / só label', aConferir) +
+    kpi('Retornos conclusivos', conclusivos.length, '', conclusivos) +
+    kpi('Sem motivo', semMotivo.length, 'cadastre palavras na aba MOTIVOS', semMotivo) +
+    kpi('Devolvidas com SLA estourado', pct(slaEst.length, comSla.length) + '%', slaEst.length + ' de ' + comSla.length, slaEst);
+
+  barras('gDevNivel', agrupar(conf, d => d.n));
+  const niveis = unicos(conf.map(d => d.n)).sort();
+  porMes('gDevMes', 'bar', niveis.map((n, i) => ({
+    nome: n, cor: CORES[i % CORES.length],
+    mapa: agrupar(conf.filter(d => d.n === n && d.d), d => chaveMes(d.d))
+  })), { empilhado: true });
+  barras('gDevTipo', agrupar(conf, d => d.tipo));
+  barras('gDevMotivo', agrupar(conf, d => d.mot), 15, true);
+}
+
+function renderizarSla(perms) {
+  const comSla = perms.filter(p => p.sla > 0 && COR_SIT[p.sit] &&
+    MULTI.mListaPerm.passa(p.l) && MULTI.mSitSla.passa(p.sit));
+  const fechadas = comSla.filter(p => p.sit === 'Dentro' || p.sit === 'Estourado');
+  const est = fechadas.filter(p => p.sit === 'Estourado');
+  const abertas = comSla.filter(p => p.sit === 'Em aberto' || p.sit === 'Estourado (em aberto)');
+  const estAberto = comSla.filter(p => p.sit === 'Estourado (em aberto)');
+  const media = fechadas.length ? fechadas.reduce((s, p) => s + p.h, 0) / fechadas.length : 0;
+
+  document.getElementById('kpisSla').innerHTML =
+    kpi('Passagens com SLA', comSla.length, '', comSla) +
+    kpi('Estouradas (encerradas)', pct(est.length, fechadas.length) + '%', est.length + ' de ' + fechadas.length, est) +
+    kpi('Em aberto agora', abertas.length, '', abertas) +
+    kpi('Estouradas em aberto', estAberto.length, '', estAberto) +
+    kpi('Média de horas úteis', fmtHoras(media), 'passagens encerradas', fechadas);
+
+  const listas = ordenarPorTamanho(agrupar(comSla, p => p.l)).map(e => e[0]);
+  const sits = ['Dentro', 'Estourado', 'Em aberto', 'Estourado (em aberto)'];
+  desenhar('gSlaLista', 'bar', listas, sits.map(s => ({
+    nome: s, cor: COR_SIT[s], grupos: listas.map(l => comSla.filter(p => p.l === l && p.sit === s))
+  })), { empilhado: true });
+
+  const porMesFech = agrupar(fechadas.filter(p => p.e), p => chaveMes(p.e));
+  porMes('gSlaMes', 'line', [{
+    nome: '% estourado', mapa: porMesFech, cor: '#d93025',
+    valoresFn: k => { const g = porMesFech.get(k) || []; return pct(g.filter(p => p.sit === 'Estourado').length, g.length); }
+  }], { sufixo: '%', max: 100 });
+
+  const linhas = estAberto.slice().sort((a, b) => b.x - a.x);
+  document.getElementById('tabEstAberto').innerHTML = !linhas.length ? '<div class="vazio">Nenhum estourado em aberto. 🎉</div>' :
+    '<table><thead><tr><th>Card</th><th>Lista</th><th>Entrou</th><th>Quem moveu</th><th class="num">Horas úteis</th>' +
+    '<th class="num">SLA</th><th class="num">Excedente</th><th>Prazo calculado</th></tr></thead><tbody>' +
+    linhas.map(p => { const c = CARD[p.card] || {};
+      return '<tr><td><a href="' + esc(c.u) + '" target="_blank" rel="noopener">' + esc(c.t || p.card) + '</a></td>' +
+        '<td>' + esc(p.l) + '</td><td>' + fmtDataHora(p.e) + '</td><td>' + esc(p.q) + '</td>' +
+        '<td class="num">' + fmtHoras(p.h) + '</td><td class="num">' + fmtHoras(p.sla) + '</td><td class="num">' + fmtHoras(p.x) + '</td>' +
+        '<td>' + fmtDataHora(p.p) + '</td></tr>'; }).join('') + '</tbody></table>';
+}
+
+function renderizarClientes(cards, devs) {
+  const conf = devs.filter(d => d.sit === 'Devolução');
+  barras('gCliente', agrupar(cards, c => c.cli), 30, true);
+  barras('gXml', agrupar(cards, c => c.xml), 30, true);
+  barras('gDevCliente', agrupar(conf, d => (CARD[d.card] || {}).cli || []), 30, true);
+  barras('gDevXml', agrupar(conf, d => (CARD[d.card] || {}).xml || []), 30, true);
+}
+
+function renderizarCards() {
+  if (!DADOS) return;
+  const termo = document.getElementById('fBusca').value.trim().toLowerCase();
+  const reinc = document.getElementById('fReinc').checked;
+  let cards = cardsFiltrados();
+  if (reinc) cards = cards.filter(c => c.dv >= 2);
+  if (termo) {
+    cards = cards.filter(c => [c.t, c.l, c.s, c.cli.join(' '), c.xml.join(' '), c.mem.join(' ')]
+      .join(' ').toLowerCase().indexOf(termo) !== -1);
+  }
+  cards.sort(reinc ? (a, b) => b.dv - a.dv || b.cr - a.cr : (a, b) => b.cr - a.cr);
+  const LIMITE = 400;
+  document.getElementById('contCards').textContent = cards.length + ' card(s)' + (cards.length > LIMITE ? ' — mostrando os ' + LIMITE + ' primeiros' : '');
+  document.getElementById('tabCards').innerHTML = tabelaCards(cards.slice(0, LIMITE));
+}
+
+/* ======================= abas ======================= */
+document.getElementById('abas').onclick = e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  ABA_ATUAL = b.getAttribute('data-aba');
+  document.querySelectorAll('#abas button').forEach(x => x.classList.toggle('atual', x === b));
+  document.querySelectorAll('.aba').forEach(s => s.classList.toggle('atual', s.id === 'aba-' + ABA_ATUAL));
+  posicionarFiltros();
+  renderizar();
+};
+
+/* ======================= atualizar agora ======================= */
+// Atendimentos e e-mails: relidos na hora. Trello: pede a carga (respeita o intervalo de 15 min).
+function solicitarAtualizacao() {
+  const btn = document.getElementById('btnAtualizar');
+  btn.disabled = true;
+  setTimeout(() => { btn.disabled = false; }, 3000);
+  carregarAtend();
+  carregarEmails(); // NOVO (painel 1.4)
+  mostrarStatus('Solicitando atualização do Trello…');
+  google.script.run
+    .withSuccessHandler(r => tratarStatus(r))
+    .withFailureHandler(e => mostrarStatus('⚠️ Trello: ' + e.message))
+    .webSolicitarAtualizacaoChamados('');
+}
+function consultarStatus() {
+  google.script.run
+    .withSuccessHandler(r => tratarStatus(r))
+    .withFailureHandler(e => { mostrarStatus('⚠️ ' + e.message); agendarStatus(120000); })
+    .webStatusAtualizacaoChamados();
+}
+function tratarStatus(r) {
+  if (DADOS && r.ultimaOkMs && r.ultimaOkMs > (DADOS.controle.ultimaOkMs || 0)) {
+    mostrarStatus('✅ Dados novos do Trello carregados.');
+    carregar();
+  }
+  if (r.emAndamento || r.estado === 'agendada' || r.estado === 'em_andamento') {
+    mostrarStatus('⏳ Atualizando o Trello… (cerca de 2 a 3 min; a tela recarrega sozinha)');
+    agendarStatus(20000);
+    return;
+  }
+  if (r.estado === 'aguarde' || r.liberadaEmMs) {
+    mostrarStatus('Atendimentos atualizados · Trello: próxima atualização às ' + fmtHora(r.liberadaEmMs));
+    agendarStatus(Math.max(20000, Math.min(r.liberadaEmMs - Date.now() + 2000, 120000)));
+    return;
+  }
+  if (r.situacao === 'ERRO') mostrarStatus('⚠️ A última carga do Trello falhou — veja o aviso.');
+  else if (!/Dados novos/.test(document.getElementById('statusAtualizacao').textContent)) mostrarStatus('');
+  agendarStatus(120000);
+}
+function agendarStatus(ms) { clearTimeout(TIMER_STATUS); TIMER_STATUS = setTimeout(consultarStatus, ms); }
+function mostrarStatus(t) { document.getElementById('statusAtualizacao').textContent = t; }
+
+/* ======================= início ======================= */
+aplicarCoresGraficos();
+['mCliente', 'mXml', 'mLista', 'mStatus', 'mMembro', 'mNivel', 'mTipoDev', 'mMotivo', 'mListaPerm', 'mSitSla', 'mAtAnalista', 'mAtCliente',
+  'mEmAnalista', 'mEmCliente', 'mEmCategoria'] // NOVO (painel 1.4): filtros dos e-mails
+  .forEach(id => criarMulti(id, renderizar));
+posicionarFiltros();
+lerTemaDoLink();
+carregar();
+carregarAtend();
+carregarEmails(); // NOVO (painel 1.4)
+consultarStatus();
+</script>
+</body>
+</html>

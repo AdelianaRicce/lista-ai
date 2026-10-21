@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <!-- Lista Ai 1.4.0 — Formulário do card do Trello (Etapa 2). Requer CardTrello.gs (com os ajustes da Etapa 2). -->
+  <style>
+    :root { --azul:#1a73e8; --cinza:#5f6368; --borda:#dadce0; --fundo:#f8f9fa; --texto:#202124; --vermelho:#d93025; --verde:#1e8e3e; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:var(--fundo); color:var(--texto); font-size:13px; }
+    .pagina { max-width:780px; margin:0 auto; padding:16px; }
+    .cartao { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:16px 18px; margin-bottom:12px; }
+    h1 { font-size:18px; margin:0 0 4px; }
+    .meta { color:var(--cinza); font-size:12px; }
+    .linha { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    @media (max-width:640px) { .linha { grid-template-columns:1fr; } }
+    .campo { margin-bottom:12px; }
+    label.rot { display:block; font-size:12px; font-weight:600; color:#3c4043; margin-bottom:4px; }
+    label.rot .obr { color:var(--vermelho); }
+    label.rot .opc { color:var(--cinza); font-weight:400; }
+    input[type=text], select, textarea { width:100%; padding:8px; border:1px solid var(--borda); border-radius:6px; font-size:13px; font-family:inherit; background:#fff; }
+    textarea { resize:vertical; min-height:70px; }
+    .invalido { border-color:var(--vermelho) !important; }
+    .urgente { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid #f6aea9; background:#fce8e6; border-radius:8px; margin-bottom:12px; }
+    .urgente label { font-weight:700; color:var(--vermelho); display:flex; gap:6px; align-items:center; cursor:pointer; }
+    .urgente select { width:auto; }
+    .xml-busca { margin-bottom:6px; }
+    .xml-lista { display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:4px 10px; max-height:170px; overflow-y:auto; border:1px solid var(--borda); border-radius:6px; padding:8px; }
+    .xml-lista label { display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer; }
+    .xml-lista input { margin:0; }
+    .dica { font-size:11px; color:var(--cinza); margin-top:3px; }
+    .aviso { background:#fef7e0; border:1px solid #fde293; color:#7a5b00; border-radius:6px; padding:8px 10px; font-size:12px; margin-bottom:10px; }
+    .colar { border:2px dashed var(--borda); border-radius:8px; padding:12px; text-align:center; color:var(--cinza); font-size:12px; }
+    .anexos { list-style:none; padding:0; margin:8px 0 0; }
+    .anexos li { display:flex; justify-content:space-between; align-items:center; padding:4px 6px; border-bottom:1px solid #eee; font-size:12px; }
+    .anexos button { border:none; background:none; color:var(--vermelho); cursor:pointer; font-size:12px; }
+    .rodape { display:flex; align-items:center; gap:12px; justify-content:flex-end; flex-wrap:wrap; }
+    .btn { padding:10px 18px; border-radius:6px; border:1px solid var(--borda); background:#fff; cursor:pointer; font-size:13px; font-weight:600; text-decoration:none; color:var(--texto); display:inline-block; }
+    .btn-primario { background:var(--azul); color:#fff; border-color:var(--azul); }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    #msg { font-size:12px; flex:1; min-width:200px; }
+    #telaFinal { display:none; text-align:center; }
+    #telaFinal h2 { font-size:18px; margin:8px 0; }
+    #carregando { text-align:center; padding:60px 0; color:var(--cinza); }
+  </style>
+</head>
+<body>
+<div class="pagina">
+  <div id="carregando">Carregando formulário…</div>
+
+  <!-- TELA FINAL (card criado ou já existente) -->
+  <div class="cartao" id="telaFinal">
+    <h2 id="finalTitulo">✅ Card criado</h2>
+    <div class="meta" id="finalTexto"></div>
+    <div id="finalAvisos" style="text-align:left;"></div>
+    <p><a class="btn btn-primario" id="finalLink" href="#" target="_blank" rel="noopener">Abrir card no Trello</a></p>
+    <div class="dica">Pode fechar esta aba. No Lista Ai, o botão da linha vira 🔗 em alguns segundos.</div>
+  </div>
+
+  <form id="form" style="display:none;" onsubmit="return false;">
+    <div class="cartao">
+      <h1 id="titulo">🗂️ Novo card</h1>
+      <div class="meta" id="subtitulo"></div>
+    </div>
+
+    <div class="cartao">
+      <div class="urgente" id="blocoUrgente" style="display:none;">
+        <label><input type="checkbox" id="fUrgente" onchange="alternarUrgente()"> 🚨 Urgente</label>
+        <select id="fUrgenteLabel" style="display:none;"></select>
+        <a id="linkPrioridades" href="#" target="_blank" rel="noopener" style="margin-left:auto; font-size:12px; color:var(--azul);">Confira aqui as prioridades de suporte</a>
+      </div>
+
+      <div id="avisos"></div>
+
+      <div class="linha">
+        <div class="campo">
+          <label class="rot">Lista do Trello <span class="obr">*</span></label>
+          <select id="fLista"></select>
+        </div>
+        <div class="campo">
+          <label class="rot">Horário início atendimento</label>
+          <input type="text" id="fInicio" disabled>
+        </div>
+      </div>
+
+      <div class="linha">
+        <div class="campo">
+          <label class="rot">Cliente <span class="obr">*</span></label>
+          <select id="fCliente"></select>
+          <div class="dica" id="dicaCliente"></div>
+        </div>
+        <div class="campo">
+          <label class="rot">User <span class="obr">*</span></label>
+          <input type="text" id="fUser">
+        </div>
+      </div>
+
+      <div class="linha">
+        <div class="campo">
+          <label class="rot">Tipo User <span class="obr">*</span></label>
+          <select id="fTipoUser"></select>
+        </div>
+        <div class="campo">
+          <label class="rot">Código Espelho <span class="obr">*</span></label>
+          <input type="text" id="fEspelho">
+        </div>
+      </div>
+
+      <div class="campo">
+        <label class="rot">Tipo_xml <span class="obr">*</span> <span class="opc" id="contXml"></span></label>
+        <input type="text" class="xml-busca" id="fXmlBusca" placeholder="Buscar tipo xml…" oninput="desenharXml()">
+        <div class="xml-lista" id="fXml"></div>
+      </div>
+
+      <div class="campo">
+        <label class="rot">Facção/Fornecedor <span class="obr">*</span></label>
+        <input type="text" id="fFaccao">
+      </div>
+
+      <div class="campo">
+        <label class="rot">Erro ou Reclamação ou Solicitação original do user <span class="obr">*</span></label>
+        <textarea id="fErro" rows="3"></textarea>
+      </div>
+
+      <div class="campo">
+        <label class="rot">Com base em qual <a id="linkDiagrama" href="#" target="_blank" rel="noopener">passo do diagrama</a> ocorre o erro/análise? <span class="obr">*</span></label>
+        <select id="fPasso"></select>
+      </div>
+
+      <div class="campo">
+        <label class="rot">Card/Documentação utilizada <span class="obr">*</span></label>
+        <textarea id="fDoc" rows="2"></textarea>
+      </div>
+
+      <div class="campo">
+        <label class="rot">Análise do caso (com passos e verificações feitas) <span class="obr">*</span></label>
+        <textarea id="fAnalise" rows="5"></textarea>
+      </div>
+
+      <div class="campo">
+        <label class="rot">Conclusão/Dúvida/Solicitação de Orientação ou Subida por término de SLA <span class="obr">*</span></label>
+        <textarea id="fConclusao" rows="3"></textarea>
+      </div>
+
+      <div class="campo">
+        <label class="rot">Anexos <span class="opc">(opcional — PDF, JPG ou PNG, até 10 MB cada, máx. 10)</span></label>
+        <div class="colar">📋 Cole um print aqui com <b>Ctrl+V</b> (em qualquer parte da página) ou
+          <label style="color:var(--azul); cursor:pointer; text-decoration:underline;">escolha arquivos<input type="file" id="fArquivos" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style="display:none;" onchange="adicionarArquivos(this.files); this.value='';"></label></div>
+        <ul class="anexos" id="listaAnexos"></ul>
+      </div>
+    </div>
+
+    <div class="cartao rodape">
+      <div id="msg"></div>
+      <button type="button" class="btn btn-primario" id="btnCriar" onclick="criarCard()" disabled>Criar card</button>
+    </div>
+  </form>
+</div>
+
+<script>
+const PARAMS = <?!= paramsJson ?>;
+let DADOS = null;
+let ANEXOS = [];        // [File]
+let XML_SEL = new Set();
+let CONTADOR_PRINT = 0;
+
+function usuarioAtual() {
+  if (PARAMS.usuario) return PARAMS.usuario;
+  try { const u = JSON.parse(localStorage.getItem('lista_ai_usuario') || 'null'); return u && u.nome ? u.nome : ''; } catch (e) { return ''; }
+}
+function el(id) { return document.getElementById(id); }
+// ALTERADO (08/10/2026): título do card no padrão "Jivo 16465" (sem o "J" do Lista Ai).
+function semPrefixoJ(p) { return String(p == null ? '' : p).trim().replace(/^J(?=\d)/i, ''); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function opcao(sel, valor, texto) { const o = document.createElement('option'); o.value = valor; o.textContent = texto; sel.appendChild(o); return o; }
+function mostrarMsg(t, cor) { el('msg').style.color = cor || 'var(--cinza)'; el('msg').textContent = t; }
+
+/* ---------------- carregar ---------------- */
+function carregar() {
+  if (!PARAMS.protocolo) { el('carregando').textContent = '❌ Protocolo não informado. Abra pelo botão 🗂️ do Lista Ai.'; return; }
+  google.script.run
+    .withSuccessHandler(d => {
+      el('carregando').style.display = 'none';
+      if (d.existente) { mostrarFinal('🔗 Este protocolo já tem card', 'Jivo ' + semPrefixoJ(PARAMS.protocolo), d.existente.link, [], true); return; }
+      DADOS = d;
+      montarFormulario();
+    })
+    .withFailureHandler(e => { el('carregando').textContent = '❌ ' + e.message; })
+    .webObterDadosFormCard(PARAMS.protocolo, usuarioAtual());
+}
+
+function montarFormulario() {
+  const d = DADOS;
+  el('titulo').textContent = '🗂️ Novo card — ' + d.titulo;
+  el('subtitulo').textContent = 'Analista: ' + d.analista + (d.canal ? ' · Canal: ' + d.canal : '') + ' · o card entra no topo da lista escolhida';
+  el('linkDiagrama').href = d.linkDiagrama;
+  el('linkPrioridades').href = d.linkPrioridades || '#';
+  el('fInicio').value = d.horarioInicio || '';
+  el('fUser').value = d.user || '';
+
+  // Urgente
+  if (d.urgentes.length) {
+    el('blocoUrgente').style.display = 'flex';
+    d.urgentes.forEach(u => opcao(el('fUrgenteLabel'), u.id, u.nome));
+  }
+  // Lista
+  d.listas.forEach(l => { const o = opcao(el('fLista'), l.id, l.nome); if (l.padrao) o.selected = true; });
+  // Cliente
+  opcao(el('fCliente'), '', 'Selecione o cliente…');
+  d.clientes.forEach(c => opcao(el('fCliente'), c.id, c.nome));
+  el('fCliente').value = d.clienteSugeridoId || '';
+  el('dicaCliente').textContent = d.clienteSugeridoId ? 'Preenchido pelo canal — pode trocar se estiver errado.' : '';
+  // Tipo User
+  opcao(el('fTipoUser'), '', 'Selecione…');
+  d.tiposUser.forEach(t => opcao(el('fTipoUser'), t, t));
+  // Passos (por grupo)
+  opcao(el('fPasso'), '', 'Selecione o passo…');
+  const grupos = {};
+  d.passos.forEach(p => {
+    const g = p.grupo || 'Outros';
+    if (!grupos[g]) { grupos[g] = document.createElement('optgroup'); grupos[g].label = g; el('fPasso').appendChild(grupos[g]); }
+    const o = document.createElement('option'); o.value = p.passo; o.textContent = p.passo; grupos[g].appendChild(o);
+  });
+  // Tipo xml
+  desenharXml();
+  // Avisos do servidor
+  el('avisos').innerHTML = (d.avisos || []).map(a => '<div class="aviso">⚠️ ' + esc(a) + '</div>').join('');
+
+  document.querySelectorAll('#form input, #form select, #form textarea').forEach(c => {
+    c.addEventListener('input', validar);
+    c.addEventListener('change', validar);
+  });
+  el('form').style.display = 'block';
+  validar();
+}
+
+function alternarUrgente() {
+  el('fUrgenteLabel').style.display = (el('fUrgente').checked && DADOS.urgentes.length > 1) ? '' : 'none';
+}
+
+function desenharXml() {
+  const termo = el('fXmlBusca').value.trim().toLowerCase();
+  el('fXml').innerHTML = DADOS.tiposXml
+    .filter(t => !termo || t.nome.toLowerCase().indexOf(termo) !== -1 || XML_SEL.has(t.id))
+    .map(t => '<label><input type="checkbox" value="' + esc(t.id) + '"' + (XML_SEL.has(t.id) ? ' checked' : '') + '> ' + esc(t.nome) + '</label>')
+    .join('') || '<span class="meta">Nenhum tipo encontrado.</span>';
+  el('fXml').querySelectorAll('input').forEach(c => c.onchange = () => {
+    if (c.checked) XML_SEL.add(c.value); else XML_SEL.delete(c.value);
+    validar();
+  });
+  el('contXml').textContent = XML_SEL.size ? '(' + XML_SEL.size + ' selecionado' + (XML_SEL.size > 1 ? 's' : '') + ')' : '';
+}
+
+/* ---------------- anexos ---------------- */
+const TIPOS_OK = ['application/pdf', 'image/jpeg', 'image/png'];
+function adicionarArquivos(lista) {
+  const max = DADOS ? DADOS.anexos.maxArquivos : 10;
+  const maxBytes = (DADOS ? DADOS.anexos.maxMbArquivo : 10) * 1024 * 1024;
+  Array.from(lista || []).forEach(f => {
+    if (ANEXOS.length >= max) { mostrarMsg('No máximo ' + max + ' anexos.', 'var(--vermelho)'); return; }
+    if (TIPOS_OK.indexOf(String(f.type).toLowerCase()) === -1) { mostrarMsg('"' + f.name + '" não é PDF, JPG ou PNG.', 'var(--vermelho)'); return; }
+    if (f.size > maxBytes) { mostrarMsg('"' + f.name + '" passa de ' + (maxBytes / 1048576) + ' MB.', 'var(--vermelho)'); return; }
+    ANEXOS.push(f);
+  });
+  desenharAnexos();
+}
+function desenharAnexos() {
+  const tam = b => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+  el('listaAnexos').innerHTML = ANEXOS.map((f, i) =>
+    '<li><span>📎 ' + esc(f.name) + ' <span class="meta">(' + tam(f.size) + ')</span></span><button type="button" onclick="removerAnexo(' + i + ')">Remover</button></li>').join('');
+}
+function removerAnexo(i) { ANEXOS.splice(i, 1); desenharAnexos(); }
+
+document.addEventListener('paste', e => {
+  if (!DADOS) return;
+  const itens = (e.clipboardData && e.clipboardData.items) ? Array.from(e.clipboardData.items) : [];
+  const arquivos = itens.filter(it => it.kind === 'file').map(it => it.getAsFile()).filter(Boolean);
+  if (!arquivos.length) return; // texto colado segue normal nos campos
+  e.preventDefault();
+  const renomeados = arquivos.map(f => {
+    if (String(f.type).indexOf('image/') !== 0) return f;
+    CONTADOR_PRINT++;
+    const ext = f.type === 'image/jpeg' ? 'jpg' : 'png';
+    return new File([f], 'print-' + CONTADOR_PRINT + '.' + ext, { type: f.type });
+  });
+  adicionarArquivos(renomeados);
+  mostrarMsg('📋 Print adicionado aos anexos.', 'var(--verde)');
+});
+
+function lerAnexos() {
+  return Promise.all(ANEXOS.map(f => new Promise((ok, falha) => {
+    const r = new FileReader();
+    r.onload = () => { const u = String(r.result || ''); ok({ nome: f.name, tipo: String(f.type).toLowerCase(), base64: u.substring(u.indexOf(',') + 1) }); };
+    r.onerror = () => falha(new Error('não foi possível ler "' + f.name + '"'));
+    r.readAsDataURL(f);
+  })));
+}
+
+/* ---------------- validação e envio ---------------- */
+const OBRIGATORIOS = [['fLista', 'Lista'], ['fCliente', 'Cliente'], ['fUser', 'User'], ['fTipoUser', 'Tipo User'],
+  ['fErro', 'Erro/Solicitação original'], ['fPasso', 'Passo do diagrama'], ['fDoc', 'Card/Documentação'],
+  ['fAnalise', 'Análise do caso'], ['fConclusao', 'Conclusão']];
+
+function validar() {
+  if (!DADOS) return false;
+  const faltando = OBRIGATORIOS.filter(o => !String(el(o[0]).value || '').trim()).map(o => o[1]);
+  if (!XML_SEL.size) faltando.splice(4, 0, 'Tipo_xml');
+  el('btnCriar').disabled = faltando.length > 0;
+  el('btnCriar').title = faltando.length ? 'Falta preencher: ' + faltando.join(', ') : '';
+  return faltando.length === 0;
+}
+
+function criarCard() {
+  if (!validar() || el('btnCriar').disabled) return;
+  el('btnCriar').disabled = true;
+  mostrarMsg(ANEXOS.length ? 'Lendo anexos…' : 'Criando card…');
+  lerAnexos().then(anexos => {
+    mostrarMsg('Criando card' + (anexos.length ? ' e enviando ' + anexos.length + ' anexo(s)…' : '…'));
+    const urgenteId = el('fUrgente').checked
+      ? (DADOS.urgentes.length > 1 ? el('fUrgenteLabel').value : (DADOS.urgentes[0] || {}).id)
+      : '';
+    const dados = {
+      protocolo: DADOS.protocolo,
+      listaId: el('fLista').value,
+      clienteId: el('fCliente').value,
+      user: el('fUser').value,
+      tipoUser: el('fTipoUser').value,
+      tiposXmlIds: Array.from(XML_SEL),
+      urgenteId: urgenteId || '',
+      espelho: el('fEspelho').value,
+      faccao: el('fFaccao').value,
+      erroOriginal: el('fErro').value,
+      passoDiagrama: el('fPasso').value,
+      documentacao: el('fDoc').value,
+      analise: el('fAnalise').value,
+      conclusao: el('fConclusao').value,
+      anexos: anexos
+    };
+    google.script.run
+      .withSuccessHandler(r => {
+        if (r.existente) { mostrarFinal('🔗 Este protocolo já tinha card', 'Outro clique criou o card antes.', r.existente.link, [], true); return; }
+        const avisos = (r.avisos || []).concat((r.falhasAnexos || []).map(f => 'Anexo não enviado — ' + f));
+        mostrarFinal('✅ Card criado', DADOS.titulo + ' · ' + r.lista + (r.dataEntrega ? ' · Data de entrega: ' + r.dataEntrega : ''), r.link, avisos, !avisos.length);
+      })
+      .withFailureHandler(e => { el('btnCriar').disabled = false; mostrarMsg('❌ ' + e.message, 'var(--vermelho)'); })
+      .webCriarCardTrello(dados, usuarioAtual());
+  }).catch(e => { el('btnCriar').disabled = false; mostrarMsg('❌ ' + e.message, 'var(--vermelho)'); });
+}
+
+/** Tela final. tentarAbrir = tenta ir direto ao card (o navegador pode bloquear; aí fica o botão). */
+function mostrarFinal(titulo, texto, link, avisos, tentarAbrir) {
+  el('form').style.display = 'none';
+  el('carregando').style.display = 'none';
+  el('telaFinal').style.display = 'block';
+  el('finalTitulo').textContent = titulo;
+  el('finalTexto').textContent = texto;
+  el('finalLink').href = link;
+  el('finalAvisos').innerHTML = (avisos || []).map(a => '<div class="aviso" style="margin-top:10px;">⚠️ ' + esc(a) + '</div>').join('');
+  if (tentarAbrir && link) {
+    try { window.top.location.href = link; } catch (e) { /* bloqueado: fica o botão */ }
+  }
+}
+
+carregar();
+
+// O link aberto pelo Widget traz "&tema=": ele manda sobre o salvo no navegador.
+try {
+  google.script.url.getLocation(loc => {
+    const t = loc && loc.parameter ? loc.parameter.tema : '';
+    if (t === 'escuro' || t === 'claro') document.documentElement.setAttribute('data-tema', t);
+  });
+} catch (e) {}
+
+</script>
+</body>
+</html>
+
